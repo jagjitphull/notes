@@ -65,6 +65,11 @@ pub fn run() {
             commands::create_note,
             commands::set_note_pinned,
             commands::set_note_deleted,
+            commands::delete_note_permanently,
+            commands::move_note,
+            commands::create_folder,
+            commands::rename_folder,
+            commands::delete_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

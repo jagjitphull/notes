@@ -71,21 +71,75 @@ pub fn serialize(front_matter: &FrontMatter, body: &str) -> String {
     format!("---\n{yaml}---\n{body}")
 }
 
-/// The first non-empty line of the body, used as both the note's display
-/// title and the basis for its filename.
+/// Strips a single leading Markdown block marker (heading, blockquote,
+/// bullet/task/ordered list item) so a rich-text title reads as plain text
+/// — e.g. "## Groceries" or "- [ ] Groceries" both become "Groceries".
+fn strip_markdown_prefix(line: &str) -> String {
+    let mut s = line.trim_start();
+
+    if let Some(rest) = s.strip_prefix("> ") {
+        s = rest.trim_start();
+    }
+
+    let hash_count = s.chars().take_while(|&c| c == '#').count();
+    if (1..=6).contains(&hash_count) {
+        if let Some(rest) = s[hash_count..].strip_prefix(' ') {
+            s = rest;
+        }
+    }
+
+    for bullet in ['-', '*', '+'] {
+        for marker in [" [ ] ", " [x] ", " [X] "] {
+            let prefix = format!("{bullet}{marker}");
+            if let Some(rest) = s.strip_prefix(&prefix) {
+                return rest.trim().to_string();
+            }
+        }
+    }
+
+    for bullet in ['-', '*', '+'] {
+        let prefix = format!("{bullet} ");
+        if let Some(rest) = s.strip_prefix(&prefix) {
+            s = rest;
+            break;
+        }
+    }
+
+    let digit_count = s.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_count > 0 {
+        let after = &s[digit_count..];
+        if let Some(rest) = after.strip_prefix(". ").or_else(|| after.strip_prefix(") ")) {
+            s = rest;
+        }
+    }
+
+    s.trim().to_string()
+}
+
+/// Strips the trailing `\` that Markdown serializers (ours included) write
+/// at the end of a line to mark it as a hard break, e.g. `"Title\\"` — a
+/// rendering artifact, not content.
+fn strip_hard_break_marker(line: &str) -> &str {
+    line.strip_suffix('\\').unwrap_or(line)
+}
+
+/// The first non-empty line of the body (Markdown syntax stripped), used as
+/// both the note's display title and the basis for its filename.
 pub fn extract_title(body: &str) -> String {
-    body.lines()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("")
-        .trim()
-        .to_string()
+    let raw = body.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+    strip_markdown_prefix(strip_hard_break_marker(raw))
 }
 
 /// The remaining lines after the title, used for the list-view preview.
 pub fn extract_preview(body: &str) -> String {
     let mut lines = body.lines().skip_while(|l| l.trim().is_empty());
     lines.next(); // skip the title line itself
-    lines.collect::<Vec<_>>().join("\n").trim().to_string()
+    lines
+        .map(strip_hard_break_marker)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 pub fn sanitize_filename(title: &str) -> String {
@@ -135,6 +189,26 @@ mod tests {
     #[test]
     fn title_and_preview_split_on_first_line() {
         let body = "Grocery list\nMilk, eggs\nBread";
+        assert_eq!(extract_title(body), "Grocery list");
+        assert_eq!(extract_preview(body), "Milk, eggs\nBread");
+    }
+
+    #[test]
+    fn title_strips_markdown_block_markers() {
+        assert_eq!(extract_title("## Groceries\nmore"), "Groceries");
+        assert_eq!(extract_title("- [ ] Buy milk\nmore"), "Buy milk");
+        assert_eq!(extract_title("- [x] Done thing\nmore"), "Done thing");
+        assert_eq!(extract_title("- Bullet title\nmore"), "Bullet title");
+        assert_eq!(extract_title("1. Ordered title\nmore"), "Ordered title");
+        assert_eq!(extract_title("> Quoted title\nmore"), "Quoted title");
+        assert_eq!(extract_title("Plain title\nmore"), "Plain title");
+    }
+
+    #[test]
+    fn title_and_preview_strip_hard_break_markers() {
+        // Markdown serializers (ours included) write a trailing '\' to mark
+        // a hard line break; it's a rendering artifact, not content.
+        let body = "Grocery list\\\nMilk, eggs\\\nBread";
         assert_eq!(extract_title(body), "Grocery list");
         assert_eq!(extract_preview(body), "Milk, eggs\nBread");
     }

@@ -283,3 +283,61 @@ pub fn set_note_deleted(
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     store::set_deleted(&conn, &notes_root, &id, deleted)
 }
+
+#[tauri::command]
+pub fn delete_note_permanently(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::delete_note_permanently(&conn, &notes_root, &id)
+}
+
+#[tauri::command]
+pub fn move_note(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+    folder_id: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::move_note(&conn, &notes_root, &id, &folder_id)
+}
+
+#[tauri::command]
+pub fn create_folder(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    parent_id: String,
+    name: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::create_folder(&conn, &notes_root, &parent_id, &name)
+}
+
+#[tauri::command]
+pub fn rename_folder(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+    name: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::rename_folder(&conn, &notes_root, &id, &name)
+}
+
+#[tauri::command]
+pub fn delete_folder(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::delete_folder(&conn, &notes_root, &id)
+}

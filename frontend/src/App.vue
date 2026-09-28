@@ -5,13 +5,20 @@ import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
 import Editor from "./components/Editor.vue";
 import FirstRunSetup from "./components/FirstRunSetup.vue";
+import ContextMenu, { type ContextMenuItem } from "./components/ContextMenu.vue";
+import PromptModal from "./components/PromptModal.vue";
 import {
+  createFolder,
   createNote,
+  deleteFolder,
+  deleteNotePermanently,
   getNoteBody,
   getNotesRoot,
   listFolders,
   listNotes,
   listTags,
+  moveNote,
+  renameFolder,
   saveNoteBody,
   setNoteDeleted,
   setNotePinned,
@@ -30,6 +37,14 @@ const searchQuery = ref("");
 const selectedNoteId = ref<string | null>(null);
 const editingBody = ref("");
 const suppressAutosave = ref(false);
+
+const contextMenu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+const promptModal = ref<{
+  title: string;
+  initialValue: string;
+  confirmLabel: string;
+  onConfirm: (value: string) => void;
+} | null>(null);
 
 let unlistenNotesChanged: UnlistenFn | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -194,6 +209,110 @@ async function onToggleDeleted() {
   await setNoteDeleted(selectedNote.value.id, !selectedNote.value.deletedAt);
   await refreshData();
 }
+
+function closeContextMenu() {
+  contextMenu.value = null;
+}
+
+function onNoteContextMenu(event: MouseEvent, note: Note) {
+  const items: ContextMenuItem[] = [];
+
+  if (note.deletedAt) {
+    items.push({ label: "Restore", action: () => setNoteDeleted(note.id, false).then(refreshData) });
+    items.push({
+      label: "Delete Permanently",
+      danger: true,
+      action: () => {
+        if (confirm(`Permanently delete "${note.title || "New Note"}"? This can't be undone.`)) {
+          deleteNotePermanently(note.id).then(refreshData);
+        }
+      },
+    });
+  } else {
+    items.push({
+      label: note.isPinned ? "Unpin" : "Pin",
+      action: () => setNotePinned(note.id, !note.isPinned).then(refreshData),
+    });
+
+    const otherFolders = folders.value.filter((f) => f.id !== note.folderId);
+    if (otherFolders.length > 0) {
+      items.push({ label: "", action: () => {}, separator: true });
+      for (const folder of otherFolders) {
+        items.push({
+          label: `Move to “${folder.name}”`,
+          action: () => moveNote(note.id, folder.id).then(refreshData),
+        });
+      }
+    }
+
+    items.push({ label: "", action: () => {}, separator: true });
+    items.push({
+      label: "Delete",
+      danger: true,
+      action: () => setNoteDeleted(note.id, true).then(refreshData),
+    });
+  }
+
+  contextMenu.value = { x: event.clientX, y: event.clientY, items };
+}
+
+function onFolderContextmenu(event: MouseEvent, folder: Folder) {
+  const isRoot = folder.id === "";
+  const items: ContextMenuItem[] = [
+    {
+      label: "New Subfolder…",
+      action: () => promptNewFolder(folder.id),
+    },
+    {
+      label: "Rename…",
+      disabled: isRoot,
+      action: () => promptRenameFolder(folder),
+    },
+    {
+      label: "Delete",
+      danger: true,
+      disabled: isRoot,
+      action: async () => {
+        try {
+          await deleteFolder(folder.id);
+          if (selectedId.value === folder.id) selectedId.value = "all";
+          await refreshData();
+        } catch (e) {
+          alert(`Can't delete "${folder.name}": ${e}`);
+        }
+      },
+    },
+  ];
+  contextMenu.value = { x: event.clientX, y: event.clientY, items };
+}
+
+function promptNewFolder(parentId: string) {
+  promptModal.value = {
+    title: "New Folder",
+    initialValue: "",
+    confirmLabel: "Create",
+    onConfirm: async (name) => {
+      const id = await createFolder(parentId, name);
+      await refreshData();
+      selectedId.value = id;
+      promptModal.value = null;
+    },
+  };
+}
+
+function promptRenameFolder(folder: Folder) {
+  promptModal.value = {
+    title: "Rename Folder",
+    initialValue: folder.name,
+    confirmLabel: "Rename",
+    onConfirm: async (name) => {
+      const newId = await renameFolder(folder.id, name);
+      if (selectedId.value === folder.id) selectedId.value = newId;
+      await refreshData();
+      promptModal.value = null;
+    },
+  };
+}
 </script>
 
 <template>
@@ -208,6 +327,8 @@ async function onToggleDeleted() {
       :all-count="allCount"
       :deleted-count="deletedCount"
       :folder-counts="folderCounts"
+      @new-folder="promptNewFolder('')"
+      @folder-contextmenu="onFolderContextmenu"
     />
     <NoteList
       v-model:selected-id="selectedNoteId"
@@ -216,6 +337,7 @@ async function onToggleDeleted() {
       :show-pinned-sections="showPinnedSections"
       :can-create="canCreate"
       @create="onCreateNote"
+      @contextmenu="onNoteContextMenu"
     />
     <Editor
       v-model:body="editingBody"
@@ -223,6 +345,22 @@ async function onToggleDeleted() {
       :folders="folders"
       @toggle-pin="onTogglePin"
       @toggle-deleted="onToggleDeleted"
+    />
+
+    <ContextMenu
+      v-if="contextMenu"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="contextMenu.items"
+      @close="closeContextMenu"
+    />
+    <PromptModal
+      v-if="promptModal"
+      :title="promptModal.title"
+      :initial-value="promptModal.initialValue"
+      :confirm-label="promptModal.confirmLabel"
+      @confirm="promptModal.onConfirm"
+      @cancel="promptModal = null"
     />
   </div>
 </template>

@@ -9,7 +9,10 @@ const props = defineProps<{
   canCreate: boolean;
 }>();
 
-const emit = defineEmits<{ create: [] }>();
+const emit = defineEmits<{
+  create: [];
+  contextmenu: [event: MouseEvent, note: Note];
+}>();
 
 const selectedId = defineModel<string | null>("selectedId", { default: null });
 
@@ -83,6 +86,10 @@ function preview(note: Note): string {
               class="note-item"
               :class="{ active: selectedId === note.id }"
               @click="selectedId = note.id"
+              @contextmenu.prevent="
+                selectedId = note.id;
+                emit('contextmenu', $event, note);
+              "
             >
               <div class="note-title-row">
                 <span class="note-title">{{ note.title || "New Note" }}</span>

@@ -10,6 +10,11 @@ defineProps<{
   folderCounts: Record<string, number>;
 }>();
 
+const emit = defineEmits<{
+  newFolder: [];
+  folderContextmenu: [event: MouseEvent, folder: Folder];
+}>();
+
 const selectedId = defineModel<string>("selectedId", { required: true });
 const searchQuery = defineModel<string>("searchQuery", { required: true });
 
@@ -57,7 +62,12 @@ const themeLabels: Record<ThemePreference, string> = {
     <div class="section">
       <div class="section-header">
         <h2 class="pane-title">Folders</h2>
-        <button class="icon-button" title="New Folder" aria-label="New Folder">
+        <button
+          class="icon-button"
+          title="New Folder"
+          aria-label="New Folder"
+          @click="emit('newFolder')"
+        >
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
           </svg>
@@ -69,6 +79,7 @@ const themeLabels: Record<ThemePreference, string> = {
             class="nav-item"
             :class="{ active: selectedId === folder.id }"
             @click="selectedId = folder.id"
+            @contextmenu.prevent="emit('folderContextmenu', $event, folder)"
           >
             <svg class="nav-icon folder-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path

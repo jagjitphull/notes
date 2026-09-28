@@ -49,3 +49,23 @@ export function setNotePinned(id: string, pinned: boolean): Promise<void> {
 export function setNoteDeleted(id: string, deleted: boolean): Promise<void> {
   return invoke("set_note_deleted", { id, deleted });
 }
+
+export function deleteNotePermanently(id: string): Promise<void> {
+  return invoke("delete_note_permanently", { id });
+}
+
+export function moveNote(id: string, folderId: string): Promise<void> {
+  return invoke("move_note", { id, folderId });
+}
+
+export function createFolder(parentId: string, name: string): Promise<string> {
+  return invoke("create_folder", { parentId, name });
+}
+
+export function renameFolder(id: string, name: string): Promise<string> {
+  return invoke("rename_folder", { id, name });
+}
+
+export function deleteFolder(id: string): Promise<void> {
+  return invoke("delete_folder", { id });
+}

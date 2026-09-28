@@ -369,9 +369,165 @@ pub fn set_deleted(
     })
 }
 
+/// Permanently erases a note (right-click "Delete Permanently" from
+/// Recently Deleted) — removes the file from disk, not just the DB row.
+pub fn delete_note_permanently(conn: &Connection, notes_root: &Path, note_id: &str) -> StoreResult<()> {
+    let rel: String = conn
+        .query_row(
+            "SELECT file_path FROM notes WHERE id = ?1",
+            [note_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    fs::remove_file(notes_root.join(&rel)).ok();
+    conn.execute("DELETE FROM notes WHERE id = ?1", [note_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn read_note_body(notes_root: &Path, rel_file_path: &str) -> StoreResult<String> {
     let raw = fs::read_to_string(notes_root.join(rel_file_path)).map_err(|e| e.to_string())?;
     Ok(note_file::parse(&raw).body)
+}
+
+fn unique_path_for_name(dir: &Path, filename: &std::ffi::OsStr) -> PathBuf {
+    let name_path = Path::new(filename);
+    let stem = name_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ext = name_path.extension().map(|s| s.to_string_lossy().to_string());
+
+    let mut candidate = dir.join(filename);
+    let mut n = 2;
+    while candidate.exists() {
+        let name = match &ext {
+            Some(e) => format!("{stem} {n}.{e}"),
+            None => format!("{stem} {n}"),
+        };
+        candidate = dir.join(name);
+        n += 1;
+    }
+    candidate
+}
+
+fn unique_dir(parent: &Path, desired_name: &str) -> PathBuf {
+    let mut candidate = parent.join(desired_name);
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = parent.join(format!("{desired_name} {n}"));
+        n += 1;
+    }
+    candidate
+}
+
+/// Moves a note into a different folder (right-click "Move to Folder…").
+pub fn move_note(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    target_folder_id: &str,
+) -> StoreResult<()> {
+    let old_rel: String = conn
+        .query_row(
+            "SELECT file_path FROM notes WHERE id = ?1",
+            [note_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let old_path = notes_root.join(&old_rel);
+
+    let target_dir = if target_folder_id.is_empty() {
+        notes_root.to_path_buf()
+    } else {
+        notes_root.join(target_folder_id)
+    };
+    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+    ensure_folder_chain(conn, notes_root, &target_dir)?;
+
+    if target_dir == old_path.parent().unwrap_or(notes_root) {
+        return Ok(()); // already there
+    }
+
+    let file_name = old_path
+        .file_name()
+        .ok_or_else(|| "note has an invalid file path".to_string())?;
+    let new_path = unique_path_for_name(&target_dir, file_name);
+
+    fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
+    upsert_note_file(conn, notes_root, &new_path)?;
+    Ok(())
+}
+
+/// Creates a new subfolder (right-click "New Folder" / the sidebar's "+").
+pub fn create_folder(
+    conn: &Connection,
+    notes_root: &Path,
+    parent_id: &str,
+    name: &str,
+) -> StoreResult<String> {
+    let parent_dir = if parent_id.is_empty() {
+        notes_root.to_path_buf()
+    } else {
+        notes_root.join(parent_id)
+    };
+    fs::create_dir_all(&parent_dir).map_err(|e| e.to_string())?;
+    ensure_folder_chain(conn, notes_root, &parent_dir)?;
+
+    let dir = unique_dir(&parent_dir, &note_file::sanitize_filename(name));
+    fs::create_dir(&dir).map_err(|e| e.to_string())?;
+    ensure_folder_chain(conn, notes_root, &dir)?;
+    Ok(dir_id(notes_root, &dir))
+}
+
+/// Renames a folder (real directory rename), then re-indexes so every note
+/// nested under it picks up its new folder id / file path.
+pub fn rename_folder(
+    conn: &Connection,
+    notes_root: &Path,
+    folder_id: &str,
+    new_name: &str,
+) -> StoreResult<String> {
+    if folder_id.is_empty() {
+        return Err("the root Notes folder can't be renamed".to_string());
+    }
+    let old_dir = notes_root.join(folder_id);
+    let parent_dir = old_dir.parent().unwrap_or(notes_root).to_path_buf();
+    let new_dir = unique_dir(&parent_dir, &note_file::sanitize_filename(new_name));
+
+    fs::rename(&old_dir, &new_dir).map_err(|e| e.to_string())?;
+    full_rescan(conn, notes_root)?;
+    Ok(dir_id(notes_root, &new_dir))
+}
+
+/// Deletes a folder, but only if it's empty (no notes, no subfolders) —
+/// refuses otherwise rather than risking silent data loss.
+pub fn delete_folder(conn: &Connection, notes_root: &Path, folder_id: &str) -> StoreResult<()> {
+    if folder_id.is_empty() {
+        return Err("the root Notes folder can't be deleted".to_string());
+    }
+    let has_notes: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM notes WHERE folder_id = ?1)",
+            [folder_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let has_subfolders: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM folders WHERE parent_id = ?1)",
+            [folder_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if has_notes || has_subfolders {
+        return Err("folder is not empty".to_string());
+    }
+
+    fs::remove_dir(notes_root.join(folder_id)).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM folders WHERE id = ?1", [folder_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -493,5 +649,66 @@ mod tests {
 
         let raw = fs::read_to_string(notes_root.join("External.md")).unwrap();
         assert!(raw.starts_with("---\n"));
+    }
+
+    #[test]
+    fn folder_create_rename_delete_and_note_move() {
+        let app_dir = temp_dir("app5");
+        let notes_root = temp_dir("root5");
+        let conn = db::init(&app_dir).unwrap();
+        full_rescan(&conn, &notes_root).unwrap();
+
+        let work_id = create_folder(&conn, &notes_root, "", "Work").unwrap();
+        assert_eq!(work_id, "Work");
+        assert!(notes_root.join("Work").is_dir());
+
+        let note_id = create_note(&conn, &notes_root, "").unwrap();
+        move_note(&conn, &notes_root, &note_id, &work_id).unwrap();
+        let folder_id: String = conn
+            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&note_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(folder_id, "Work");
+
+        // Can't delete a non-empty folder.
+        assert!(delete_folder(&conn, &notes_root, &work_id).is_err());
+
+        let renamed_id = rename_folder(&conn, &notes_root, &work_id, "Projects").unwrap();
+        assert_eq!(renamed_id, "Projects");
+        assert!(!notes_root.join("Work").exists());
+        assert!(notes_root.join("Projects").is_dir());
+        let folder_id_after_rename: String = conn
+            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&note_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(folder_id_after_rename, "Projects");
+
+        move_note(&conn, &notes_root, &note_id, "").unwrap();
+        delete_folder(&conn, &notes_root, &renamed_id).unwrap();
+        assert!(!notes_root.join("Projects").exists());
+        let folder_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM folders WHERE id = ?1",
+                [&renamed_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(folder_count, 0);
+    }
+
+    #[test]
+    fn delete_note_permanently_removes_file_and_row() {
+        let app_dir = temp_dir("app6");
+        let notes_root = temp_dir("root6");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "").unwrap();
+        let rel: String = conn
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert!(notes_root.join(&rel).exists());
+
+        delete_note_permanently(&conn, &notes_root, &id).unwrap();
+        assert!(!notes_root.join(&rel).exists());
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
     }
 }

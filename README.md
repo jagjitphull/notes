@@ -61,6 +61,37 @@ npm run dev     # launches the Tauri app with the Vite dev server
 On first launch you'll be asked where to store your notes (with quick-picks
 for detected Dropbox/pCloud/Nextcloud/etc folders, or a local-only default).
 
+## Packaging / installing
+
+```
+npm run build     # tauri build — produces a release .deb and .AppImage
+```
+
+Output lands in `src-tauri/target/release/bundle/`:
+
+- **`deb/Notes_<version>_amd64.deb`** — the native, recommended install for
+  Pop!_OS/Ubuntu: `sudo apt install ./Notes_<version>_amd64.deb` (apt
+  resolves the `libwebkit2gtk-4.1-0`/`libgtk-3-0` runtime deps
+  automatically). Installs to `/usr/bin/notes` with a proper `.desktop`
+  entry and icon, so it shows up in the app launcher like any other app.
+- **`appimage/Notes_<version>_amd64.AppImage`** — a portable, no-install
+  option: `chmod +x` it and run it directly, on any distro.
+
+Both were built and smoke-tested against this exact repo state: the `.deb`
+installs cleanly via `apt`, and both it and the AppImage launch to the real
+first-run screen.
+
+The `.deb`'s dependencies (`libwebkit2gtk-4.1-0`, `libgtk-3-0`) are only
+available on **Pop!_OS 24.04+ / Ubuntu 24.04+ (noble)** — 22.04 (jammy)
+ships webkit2gtk 4.0, not 4.1, so `apt install` would fail to resolve them
+there. The AppImage bundles its own webkit2gtk and works on either.
+
+RPM isn't built here since `rpmbuild` isn't part of this toolchain and
+isn't relevant on a Debian-based distro like Pop!_OS; Flatpak was left out
+too, since between the native `.deb` and the portable AppImage there wasn't
+a gap it would fill for this app's target platform — worth adding later if
+cross-distro store distribution becomes a goal.
+
 ## Status
 
 - **Phase 1** (scaffolding): done — build system, SQLite schema.
@@ -74,6 +105,6 @@ for detected Dropbox/pCloud/Nextcloud/etc folders, or a local-only default).
 - **Phase 4** (state management): effectively complete as a side effect of
   Phase 3 — folder clicks, note selection, and note editing are all backed
   by real data, not mocks.
-- **Phase 5** (search & polish), in progress: FTS5-backed search and
-  keyboard shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation) are done.
-  Linux packaging (Flatpak/AppImage) is the remaining piece.
+- **Phase 5** (search & polish): done — FTS5-backed search, keyboard
+  shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation), and Linux
+  packaging (.deb + AppImage) are all in place.

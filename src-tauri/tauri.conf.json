@@ -15,8 +15,8 @@
         "title": "Notes",
         "width": 1200,
         "height": 800,
-        "minWidth": 760,
-        "minHeight": 480,
+        "minWidth": 900,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false
       }

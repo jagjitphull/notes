@@ -66,7 +66,14 @@ for detected Dropbox/pCloud/Nextcloud/etc folders, or a local-only default).
 - **Phase 1** (scaffolding): done — build system, SQLite schema.
 - **Phase 2** (layout): done — three-pane UI, dark/light theme (follows the
   OS, plus a manual override).
-- **Phase 3** (editor), in progress: file-backed storage, debounced
-  autosave, and basic note/pin/delete actions are wired and working end to
-  end against real files. Rich formatting (bold/headers/checklists/code
-  blocks) is the remaining piece.
+- **Phase 3** (editor): done — file-backed storage with debounced autosave,
+  a TipTap rich-text editor (bold/italic/underline/strike, headings,
+  checklists, lists, code blocks, blockquotes, basic image drag-and-drop),
+  and right-click context menus for notes (pin/move/delete/restore) and
+  folders (new subfolder/rename/delete).
+- **Phase 4** (state management): effectively complete as a side effect of
+  Phase 3 — folder clicks, note selection, and note editing are all backed
+  by real data, not mocks.
+- **Phase 5** (search & polish), in progress: FTS5-backed search and
+  keyboard shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation) are done.
+  Linux packaging (Flatpak/AppImage) is the remaining piece.

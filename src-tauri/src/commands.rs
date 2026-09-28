@@ -165,35 +165,64 @@ pub struct NoteListItemDto {
     pub updated_at: String,
 }
 
+const NOTE_LIST_ITEM_COLUMNS: &str = "n.id, n.title, n.plaintext_content, n.folder_id, n.is_pinned,
+     n.deleted_at, n.updated_at,
+     COALESCE((SELECT GROUP_CONCAT(nt.tag_id) FROM note_tags nt WHERE nt.note_id = n.id), '')";
+
+fn map_note_list_item(r: &rusqlite::Row) -> rusqlite::Result<NoteListItemDto> {
+    let tag_ids_raw: String = r.get(7)?;
+    Ok(NoteListItemDto {
+        id: r.get(0)?,
+        title: r.get(1)?,
+        plaintext_content: r.get(2)?,
+        folder_id: r.get(3)?,
+        is_pinned: r.get::<_, i64>(4)? != 0,
+        deleted_at: r.get(5)?,
+        updated_at: r.get(6)?,
+        tag_ids: if tag_ids_raw.is_empty() {
+            Vec::new()
+        } else {
+            tag_ids_raw.split(',').map(str::to_string).collect()
+        },
+    })
+}
+
 #[tauri::command]
 pub fn list_notes(db_state: State<DbState>) -> Result<Vec<NoteListItemDto>, String> {
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
-        .prepare(
-            "SELECT n.id, n.title, n.plaintext_content, n.folder_id, n.is_pinned,
-                    n.deleted_at, n.updated_at,
-                    COALESCE((SELECT GROUP_CONCAT(nt.tag_id) FROM note_tags nt WHERE nt.note_id = n.id), '')
-             FROM notes n",
-        )
+        .prepare(&format!("SELECT {NOTE_LIST_ITEM_COLUMNS} FROM notes n"))
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], |r| {
-            let tag_ids_raw: String = r.get(7)?;
-            Ok(NoteListItemDto {
-                id: r.get(0)?,
-                title: r.get(1)?,
-                plaintext_content: r.get(2)?,
-                folder_id: r.get(3)?,
-                is_pinned: r.get::<_, i64>(4)? != 0,
-                deleted_at: r.get(5)?,
-                updated_at: r.get(6)?,
-                tag_ids: if tag_ids_raw.is_empty() {
-                    Vec::new()
-                } else {
-                    tag_ids_raw.split(',').map(str::to_string).collect()
-                },
-            })
-        })
+        .query_map([], map_note_list_item)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// Searches notes via the FTS5 index (title + full body), ranked by
+/// relevance. Each whitespace-separated word becomes its own quoted prefix
+/// term ("word"*) so results update sensibly as the user keeps typing, and
+/// so free-form query text can't be misread as FTS5 query syntax (column
+/// filters, boolean operators, etc).
+#[tauri::command]
+pub fn search_notes(db_state: State<DbState>, query: String) -> Result<Vec<NoteListItemDto>, String> {
+    let fts_query = store::build_fts_query(&query);
+    if fts_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {NOTE_LIST_ITEM_COLUMNS}
+             FROM notes n
+             JOIN notes_fts ON notes_fts.rowid = n.rowid
+             WHERE notes_fts MATCH ?1
+             ORDER BY bm25(notes_fts)"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([fts_query], map_note_list_item)
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }

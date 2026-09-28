@@ -59,6 +59,7 @@ pub fn run() {
             commands::set_notes_root,
             commands::list_folders,
             commands::list_notes,
+            commands::search_notes,
             commands::list_tags,
             commands::get_note_body,
             commands::save_note_body,

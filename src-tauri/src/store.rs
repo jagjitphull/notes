@@ -390,6 +390,18 @@ pub fn read_note_body(notes_root: &Path, rel_file_path: &str) -> StoreResult<Str
     Ok(note_file::parse(&raw).body)
 }
 
+/// Turns free-form user search text into an FTS5 MATCH query: each word
+/// becomes its own quoted prefix term, so "groc" matches "grocery" as the
+/// user types, multiple words combine with FTS5's implicit AND, and
+/// quoting keeps the input from ever being interpreted as FTS5 query
+/// syntax (column filters, boolean operators, unbalanced quotes, ...).
+pub fn build_fts_query(raw: &str) -> String {
+    raw.split_whitespace()
+        .map(|tok| format!("\"{}\"*", tok.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn unique_path_for_name(dir: &Path, filename: &std::ffi::OsStr) -> PathBuf {
     let name_path = Path::new(filename);
     let stem = name_path
@@ -710,5 +722,17 @@ mod tests {
         assert!(!notes_root.join(&rel).exists());
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn fts_query_quotes_and_prefixes_each_word() {
+        assert_eq!(build_fts_query("grocery"), "\"grocery\"*");
+        assert_eq!(build_fts_query("buy milk"), "\"buy\"* \"milk\"*");
+        assert_eq!(build_fts_query(""), "");
+        assert_eq!(build_fts_query("   "), "");
+        // A quote in the query must not break out of FTS5's string literal.
+        assert_eq!(build_fts_query("say \"hi\""), "\"say\"* \"\"\"hi\"\"\"*");
+        // Would otherwise be read as FTS5 boolean/column-filter syntax.
+        assert_eq!(build_fts_query("title:foo AND bar"), "\"title:foo\"* \"AND\"* \"bar\"*");
     }
 }

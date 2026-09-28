@@ -20,6 +20,7 @@ import {
   moveNote,
   renameFolder,
   saveNoteBody,
+  searchNotes,
   setNoteDeleted,
   setNotePinned,
 } from "./api";
@@ -34,9 +35,12 @@ const tags = ref<Tag[]>([]);
 
 const selectedId = ref<string>("all");
 const searchQuery = ref("");
+const searchResults = ref<Note[] | null>(null);
 const selectedNoteId = ref<string | null>(null);
 const editingBody = ref("");
 const suppressAutosave = ref(false);
+const sidebarRef = ref<InstanceType<typeof Sidebar> | null>(null);
+const editorRef = ref<InstanceType<typeof Editor> | null>(null);
 
 const contextMenu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
 const promptModal = ref<{
@@ -48,6 +52,7 @@ const promptModal = ref<{
 
 let unlistenNotesChanged: UnlistenFn | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let dirty = false;
 
 async function refreshData() {
@@ -92,18 +97,36 @@ const folderCounts = computed<Record<string, number>>(() => {
 
 const isSearching = computed(() => searchQuery.value.trim().length > 0);
 
+// While searching, filter/scope from the FTS5-ranked result set (full-text
+// across title + body) instead of the plain in-memory list — same "scoped
+// to the current folder/tag/trash view" behavior, better matching.
+const searchPool = computed(() => (isSearching.value ? searchResults.value ?? [] : notes.value));
+
+watch(searchQuery, (q) => {
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  const trimmed = q.trim();
+  if (!trimmed) {
+    searchResults.value = null;
+    return;
+  }
+  searchTimer = setTimeout(async () => {
+    searchResults.value = await searchNotes(trimmed);
+  }, 150);
+});
+
 const baseNotes = computed(() => {
+  const pool = searchPool.value;
   if (selectedId.value === "recently-deleted") {
-    return notes.value.filter((n) => n.deletedAt);
+    return pool.filter((n) => n.deletedAt);
   }
   if (selectedId.value.startsWith("tag:")) {
     const tagId = selectedId.value.slice(4);
-    return notes.value.filter((n) => !n.deletedAt && n.tagIds.includes(tagId));
+    return pool.filter((n) => !n.deletedAt && n.tagIds.includes(tagId));
   }
   if (selectedId.value === "all") {
-    return notes.value.filter((n) => !n.deletedAt);
+    return pool.filter((n) => !n.deletedAt);
   }
-  return notes.value.filter((n) => !n.deletedAt && n.folderId === selectedId.value);
+  return pool.filter((n) => !n.deletedAt && n.folderId === selectedId.value);
 });
 
 const showPinnedSections = computed(
@@ -115,16 +138,10 @@ const canCreate = computed(
 );
 
 const filteredNotes = computed(() => {
-  let result = baseNotes.value;
-  if (isSearching.value) {
-    const q = searchQuery.value.trim().toLowerCase();
-    result = result.filter(
-      (n) =>
-        n.title.toLowerCase().includes(q) ||
-        n.plaintextContent.toLowerCase().includes(q),
-    );
-  }
-  return [...result].sort((a, b) => {
+  // Search results already come back relevance-ranked from FTS5; browsing
+  // (not searching) sorts pinned-first then by modified date instead.
+  if (isSearching.value) return baseNotes.value;
+  return [...baseNotes.value].sort((a, b) => {
     if (showPinnedSections.value && a.isPinned !== b.isPinned) {
       return a.isPinned ? -1 : 1;
     }
@@ -196,6 +213,7 @@ async function onCreateNote() {
   const newId = await createNote(folderId);
   await refreshData();
   selectedNoteId.value = newId;
+  editorRef.value?.focusEditor();
 }
 
 async function onTogglePin() {
@@ -313,6 +331,45 @@ function promptRenameFolder(folder: Folder) {
     },
   };
 }
+
+function isTypingContext(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+}
+
+function navigateList(direction: number) {
+  const list = filteredNotes.value;
+  if (list.length === 0) return;
+  const currentIndex = list.findIndex((n) => n.id === selectedNoteId.value);
+  const nextIndex =
+    currentIndex === -1 ? 0 : Math.min(Math.max(currentIndex + direction, 0), list.length - 1);
+  selectedNoteId.value = list[nextIndex].id;
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey;
+
+  if (mod && e.key.toLowerCase() === "n") {
+    e.preventDefault();
+    if (canCreate.value) onCreateNote();
+    return;
+  }
+
+  if (mod && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    sidebarRef.value?.focusSearch();
+    return;
+  }
+
+  if (!mod && (e.key === "ArrowDown" || e.key === "ArrowUp") && !isTypingContext()) {
+    e.preventDefault();
+    navigateList(e.key === "ArrowDown" ? 1 : -1);
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onGlobalKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 </script>
 
 <template>
@@ -320,6 +377,7 @@ function promptRenameFolder(folder: Folder) {
 
   <div v-else-if="!loading" class="app-shell">
     <Sidebar
+      ref="sidebarRef"
       v-model:selected-id="selectedId"
       v-model:search-query="searchQuery"
       :folders="folders"
@@ -340,6 +398,7 @@ function promptRenameFolder(folder: Folder) {
       @contextmenu="onNoteContextMenu"
     />
     <Editor
+      ref="editorRef"
       v-model:body="editingBody"
       :note="selectedNote"
       :folders="folders"

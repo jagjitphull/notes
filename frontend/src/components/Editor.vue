@@ -83,14 +83,6 @@ watch(body, (value) => {
   }
 });
 
-watch(
-  () => props.note?.id,
-  async () => {
-    await nextTick();
-    editor.value?.commands.focus("end");
-  },
-);
-
 watch(isDeleted, (deleted) => {
   editor.value?.setEditable(!deleted);
 });
@@ -98,6 +90,18 @@ watch(isDeleted, (deleted) => {
 onBeforeUnmount(() => {
   editor.value?.destroy();
 });
+
+// Deliberately not auto-focused on every note switch: that would steal
+// keyboard focus into the (now-editable) content on every arrow-key list
+// navigation step, breaking "arrow keys to navigate the notes list" after
+// the very first step. The parent calls this explicitly right after
+// creating a note, where jumping straight into typing is exactly wanted.
+async function focusEditor() {
+  await nextTick();
+  editor.value?.commands.focus("end");
+}
+
+defineExpose({ focusEditor });
 
 const folderName = computed(
   () => props.folders.find((f) => f.id === props.note?.folderId)?.name ?? "",

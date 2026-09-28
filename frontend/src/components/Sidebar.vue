@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import type { Folder, Tag } from "../types";
 import { useTheme, type ThemePreference } from "../composables/useTheme";
 
@@ -25,6 +26,15 @@ const themeLabels: Record<ThemePreference, string> = {
   light: "Light",
   dark: "Dark",
 };
+
+const searchInputRef = ref<HTMLInputElement | null>(null);
+
+function focusSearch() {
+  searchInputRef.value?.focus();
+  searchInputRef.value?.select();
+}
+
+defineExpose({ focusSearch });
 </script>
 
 <template>
@@ -35,6 +45,7 @@ const themeLabels: Record<ThemePreference, string> = {
         <path d="M13 13L17.5 17.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
       </svg>
       <input
+        ref="searchInputRef"
         v-model="searchQuery"
         type="text"
         placeholder="Search"

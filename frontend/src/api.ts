@@ -30,6 +30,10 @@ export function listTags(): Promise<Tag[]> {
   return invoke("list_tags");
 }
 
+export function searchNotes(query: string): Promise<Note[]> {
+  return invoke("search_notes", { query });
+}
+
 export function getNoteBody(id: string): Promise<string> {
   return invoke("get_note_body", { id });
 }

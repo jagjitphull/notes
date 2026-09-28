@@ -6,7 +6,10 @@ const props = defineProps<{
   notes: Note[];
   title: string;
   showPinnedSections: boolean;
+  canCreate: boolean;
 }>();
+
+const emit = defineEmits<{ create: [] }>();
 
 const selectedId = defineModel<string | null>("selectedId", { default: null });
 
@@ -55,6 +58,17 @@ function preview(note: Note): string {
   <section class="note-list">
     <div class="pane-header">
       <h1 class="list-title">{{ title }}</h1>
+      <button
+        v-if="canCreate"
+        class="icon-button new-note-button"
+        title="New Note"
+        aria-label="New Note"
+        @click="emit('create')"
+      >
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      </button>
     </div>
 
     <div class="scroll-area">
@@ -96,11 +110,19 @@ function preview(note: Note): string {
   overflow: hidden;
 }
 
+.pane-header {
+  justify-content: space-between;
+}
+
 .list-title {
   font-size: 20px;
   font-weight: 700;
   margin: 0;
   color: var(--text-primary);
+}
+
+.new-note-button {
+  flex: 0 0 auto;
 }
 
 .scroll-area {

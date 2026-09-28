@@ -26,3 +26,8 @@ tauri-plugin-log = "2"
 rusqlite = { version = "0.31", features = ["bundled-full"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+serde_yaml = "0.9"
+walkdir = "2"
+notify = "6"
+notify-debouncer-mini = "0.4"
+tauri-plugin-dialog = "2"

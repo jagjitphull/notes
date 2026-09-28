@@ -3,13 +3,17 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
-/// Embedded schema migrations, applied in order on every startup.
-/// Each statement uses `IF NOT EXISTS` / idempotent guards, so re-applying
-/// an already-migrated database is a no-op.
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "0001_init",
-    include_str!("../migrations/0001_init.sql"),
-)];
+/// Embedded schema migrations, applied in order on every startup. Each is
+/// tracked in `schema_migrations` and runs at most once per database, so a
+/// migration doesn't need to be idempotent on its own (e.g. a later one may
+/// safely `DROP TABLE` and redefine what an earlier one created).
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../migrations/0001_init.sql")),
+    (
+        "0002_file_backed_notes",
+        include_str!("../migrations/0002_file_backed_notes.sql"),
+    ),
+];
 
 pub struct DbState(pub Mutex<Connection>);
 

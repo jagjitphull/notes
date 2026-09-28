@@ -9,6 +9,11 @@ export interface Tag {
   name: string;
 }
 
+/**
+ * A note as listed in the sidebar/list — metadata plus a short preview.
+ * The full body lives in the note's Markdown file on disk and is fetched
+ * separately (see api.ts's getNoteBody) when the note is opened.
+ */
 export interface Note {
   id: string;
   title: string;

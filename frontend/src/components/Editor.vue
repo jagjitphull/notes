@@ -1,11 +1,28 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type { Folder, Note } from "../types";
 
 const props = defineProps<{
   note: Note | null;
   folders: Folder[];
 }>();
+
+const emit = defineEmits<{
+  togglePin: [];
+  toggleDeleted: [];
+}>();
+
+const body = defineModel<string>("body", { default: "" });
+
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+
+watch(
+  () => props.note?.id,
+  async () => {
+    await nextTick();
+    textareaRef.value?.focus();
+  },
+);
 
 const folderName = computed(
   () => props.folders.find((f) => f.id === props.note?.folderId)?.name ?? "",
@@ -18,6 +35,12 @@ const formattedDate = computed(() => {
     timeStyle: "short",
   });
 });
+
+const isDeleted = computed(() => !!props.note?.deletedAt);
+
+function onInput(e: Event) {
+  body.value = (e.target as HTMLTextAreaElement).value;
+}
 </script>
 
 <template>
@@ -25,16 +48,44 @@ const formattedDate = computed(() => {
     <template v-if="note">
       <div class="editor-toolbar">
         <span class="editor-meta">{{ formattedDate }} &middot; {{ folderName }}</span>
+        <div class="editor-actions">
+          <button
+            class="icon-button"
+            :class="{ active: note.isPinned }"
+            :title="note.isPinned ? 'Unpin' : 'Pin'"
+            :disabled="isDeleted"
+            @click="emit('togglePin')"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M11.5 2.5a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4 0l-.2-.2-2.6 2.6.6 2.9a.75.75 0 0 1-1.27.68l-2.9-2.9-4 4a.6.6 0 0 1-.85-.85l4-4-2.9-2.9a.75.75 0 0 1 .68-1.27l2.9.6 2.6-2.6-.2-.2a1 1 0 0 1 0-1.4l.7-.7Z" />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            :title="isDeleted ? 'Restore' : 'Delete'"
+            @click="emit('toggleDeleted')"
+          >
+            <svg v-if="isDeleted" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M4 10a6 6 0 1 1 2 4.5M4 10V6M4 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path
+                d="M5 6.5h10M8.25 6.5V5a1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1v1.5M8.5 9.5v4M11.5 9.5v4M5.75 6.5l.6 8.1a1.5 1.5 0 0 0 1.496 1.4h4.308a1.5 1.5 0 0 0 1.496-1.4l.6-8.1"
+                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="editor-canvas">
-        <h1 class="note-title">{{ note.title || "New Note" }}</h1>
-        <p
-          v-for="(line, i) in note.plaintextContent.split('\n')"
-          :key="i"
-          class="note-line"
-        >
-          {{ line || " " }}
-        </p>
+        <textarea
+          ref="textareaRef"
+          class="editor-textarea"
+          :value="body"
+          :readonly="isDeleted"
+          placeholder="New Note"
+          @input="onInput"
+        ></textarea>
       </div>
     </template>
 
@@ -59,14 +110,27 @@ const formattedDate = computed(() => {
 .editor-toolbar {
   flex: 0 0 auto;
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 10px 24px;
-  border-bottom: 1px solid transparent;
+  position: relative;
+  padding: 10px 16px;
 }
 
 .editor-meta {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.editor-actions {
+  position: absolute;
+  right: 12px;
+  top: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.icon-button.active {
+  color: var(--accent-blue);
 }
 
 .editor-canvas {
@@ -76,21 +140,25 @@ const formattedDate = computed(() => {
   max-width: 760px;
   margin: 0 auto;
   width: 100%;
+  display: flex;
 }
 
-.note-title {
-  font-size: 26px;
-  font-weight: 700;
-  margin: 4px 0 16px;
+.editor-textarea {
+  flex: 1 1 auto;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
   color: var(--text-primary);
-}
-
-.note-line {
+  font: inherit;
   font-size: 15px;
   line-height: 1.6;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-  white-space: pre-wrap;
+  font-family: var(--sans);
+  padding: 4px 0 0;
+}
+
+.editor-textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
 .empty-editor {

@@ -1,0 +1,9 @@
+node_modules
+*.local
+
+# Local SQLite databases (if ever run outside the OS app-data dir)
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+.DS_Store

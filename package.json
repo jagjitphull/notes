@@ -1,0 +1,25 @@
+{
+  "name": "notes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimalist, local-first note-taking app for Linux, built with Tauri + Vue.",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri",
+    "frontend:dev": "npm run dev --prefix frontend",
+    "frontend:build": "npm run build --prefix frontend"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jagjitphull/notes.git"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jagjitphull/notes/issues"
+  },
+  "homepage": "https://github.com/jagjitphull/notes#readme",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.0"
+  }
+}

@@ -156,8 +156,8 @@ is still needed before treating any of them as verified.
 
 ## Releasing (CI-built, signed, auto-updating)
 
-Pushing a version tag builds, signs, and publishes both installers via
-`.github/workflows/release.yml`:
+Pushing a version tag builds, signs, and publishes installers for both
+Linux and macOS, as a two-job matrix, via `.github/workflows/release.yml`:
 
 ```
 git tag v0.2.0
@@ -165,13 +165,24 @@ git push origin v0.2.0
 ```
 
 This creates a **draft** GitHub Release with the `.deb`, the `.AppImage`,
-and their signatures attached — review it and hit "Publish" when ready;
-nothing goes live automatically. Once published, the app's built-in
-updater (checks on launch, and a small "Update to vX.Y.Z" pill appears in
-the top bar when one's found) picks it up automatically for anyone
-already running an earlier version — no separate store or update server
-needed, it just reads `.../releases/latest/download/latest.json`, which
-`tauri-action` generates and attaches for you.
+a universal (Apple Silicon + Intel) macOS `.dmg`, and their signatures
+attached — review it and hit "Publish" when ready; nothing goes live
+automatically. Once published, the app's built-in updater (checks on
+launch, and a small "Update to vX.Y.Z" pill appears in the top bar when
+one's found) picks it up automatically for anyone already running an
+earlier version — no separate store or update server needed, it just
+reads `.../releases/latest/download/latest.json`, which `tauri-action`
+generates and attaches for you.
+
+**macOS is unsigned** — no Apple Developer account (that's a paid,
+identity-verified enrollment, not something that can be set up from
+here), so the `.dmg` isn't code-signed or notarized. Gatekeeper will
+refuse to open it with a normal double-click; the release notes tell
+people to right-click the app in Finder and choose Open instead, which
+only needs doing once. The build itself has not been tested on real
+macOS hardware (this repo is developed on Linux) - only that the CI
+job's config is valid; the first real tag push is effectively also its
+first end-to-end test.
 
 Signing only happens here, in CI — a plain local `npm run build` produces
 an ordinary unsigned `.deb`/`.AppImage` (fine for testing the app itself)
@@ -215,7 +226,8 @@ doesn't know about.
   by real data, not mocks.
 - **Phase 5** (search & polish): done — FTS5-backed search, keyboard
   shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation), and Linux
-  packaging (.deb + AppImage) are all in place.
+  packaging (.deb + AppImage, plus Flatpak/Snap/AUR manifests) are all in
+  place.
 - **Post-launch polish**: a system tray icon (closing the window hides it
   rather than quitting, so the app keeps syncing in the background; Quit
   from the tray menu exits for real) and a 30-day auto-purge of Recently
@@ -247,9 +259,10 @@ doesn't know about.
   (`vue-tsc` + `vite build`, a Vitest suite covering the API bindings,
   both layout/theme composables, and the Smart Search toggle's
   availability/fallback behavior) — on every push and PR. Pushing a
-  version tag builds, signs, and publishes signed `.deb`/`.AppImage`
-  releases, which the app's built-in updater then picks up automatically
-  for existing installs; see "Releasing" above.
+  version tag builds, signs, and publishes a signed `.deb`/`.AppImage`
+  (Linux) and an unsigned universal `.dmg` (macOS), which the app's
+  built-in updater then picks up automatically for existing installs;
+  see "Releasing" above.
 
 ## License
 

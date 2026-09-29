@@ -10,15 +10,27 @@ on:
 jobs:
   release:
     name: Build, sign, and publish
-    # 24.04+ specifically: webkit2gtk-4.1 (what Tauri 2 links against)
-    # isn't available on 22.04 - see README.
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 24.04+ specifically: webkit2gtk-4.1 (what Tauri 2 links
+          # against) isn't available on 22.04 - see README.
+          - platform: ubuntu-24.04
+            args: --bundles deb,appimage
+          # macos-14+ runners are Apple Silicon; --target
+          # universal-apple-darwin builds one .dmg that runs on both
+          # Apple Silicon and Intel Macs instead of two separate ones.
+          - platform: macos-14
+            args: --target universal-apple-darwin --bundles dmg
+    runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -28,6 +40,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # Only macOS needs both Darwin targets (for the universal
+          # binary) - harmless no-op on Linux, where the default host
+          # target is added automatically regardless.
+          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -50,19 +67,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Deliberately no APPLE_CERTIFICATE/APPLE_SIGNING_IDENTITY -
+          # no Apple Developer account, so the macOS build ships
+          # unsigned and unnotarized (per-project decision - see
+          # README). Gatekeeper will warn on first launch; the README
+          # documents the right-click-Open workaround.
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Notes ${{ github.ref_name }}"
           releaseBody: |
             See the commit history for what changed. Download the `.deb`
-            for Pop!_OS/Ubuntu 24.04+, or the `.AppImage` for any distro.
+            for Pop!_OS/Ubuntu 24.04+, the `.AppImage` for any distro, or
+            the `.dmg` for macOS (Apple Silicon and Intel).
+
+            The macOS build is unsigned (no Apple Developer account) -
+            Gatekeeper will refuse to open it normally. Right-click the
+            app in Finder, choose Open, then confirm in the dialog that
+            appears; this is only needed the first time.
           # Draft so a person reviews and publishes it, rather than every
           # tag push immediately going live as a public release.
           releaseDraft: true
           prerelease: false
-          # Only the release build signs artifacts (needs the two
-          # TAURI_SIGNING_PRIVATE_KEY* secrets above) - deliberately not
-          # set in tauri.conf.json itself, so a plain local `npm run
+          # Only the release build signs (updater) artifacts (needs the
+          # two TAURI_SIGNING_PRIVATE_KEY* secrets above) - deliberately
+          # not set in tauri.conf.json itself, so a plain local `npm run
           # build` doesn't also demand a private key just to produce an
           # ordinary (unsigned, non-updater-verifiable) test build.
-          args: --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          args: ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":true}}'

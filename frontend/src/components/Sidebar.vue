@@ -9,6 +9,7 @@ defineProps<{
   allCount: number;
   deletedCount: number;
   folderCounts: Record<string, number>;
+  smartSearchSupported: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 
 const selectedId = defineModel<string>("selectedId", { required: true });
 const searchQuery = defineModel<string>("searchQuery", { required: true });
+const smartSearchEnabled = defineModel<boolean>("smartSearchEnabled", { required: true });
 
 const { preference, cyclePreference } = useTheme();
 
@@ -51,6 +53,25 @@ defineExpose({ focusSearch });
         placeholder="Search"
         aria-label="Search notes"
       />
+      <button
+        v-if="smartSearchSupported"
+        class="smart-search-toggle"
+        :class="{ active: smartSearchEnabled }"
+        type="button"
+        title="Smart Search: semantic search over note meaning, via a local Ollama model"
+        aria-label="Toggle Smart Search"
+        :aria-pressed="smartSearchEnabled"
+        @click="smartSearchEnabled = !smartSearchEnabled"
+      >
+        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path
+            d="M8.5 2.5c.28 0 .5.24.44.5l-.62 2.67 2.67-.62a.46.46 0 0 1 .5.94l-2.67.62.62 2.67a.46.46 0 0 1-.94.5l-.62-2.67-2.67.62a.46.46 0 0 1-.5-.94l2.67-.62-.62-2.67a.46.46 0 0 1 .44-.5Z"
+          />
+          <path
+            d="M14.75 10.5c.22 0 .4.15.44.36l.3 1.4 1.4.3a.45.45 0 0 1 0 .88l-1.4.3-.3 1.4a.45.45 0 0 1-.88 0l-.3-1.4-1.4-.3a.45.45 0 0 1 0-.88l1.4-.3.3-1.4a.45.45 0 0 1 .44-.36Z"
+          />
+        </svg>
+      </button>
     </div>
 
     <ul class="nav-list">
@@ -194,6 +215,36 @@ defineExpose({ focusSearch });
 
 .search-box input::placeholder {
   color: var(--text-tertiary);
+}
+
+.smart-search-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.smart-search-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.smart-search-toggle:hover {
+  color: var(--text-secondary);
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.smart-search-toggle.active {
+  color: var(--accent-blue);
+  background: rgba(10, 132, 255, 0.15);
 }
 
 .nav-list {

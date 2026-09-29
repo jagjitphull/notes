@@ -6,12 +6,21 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
+use crate::embeddings;
 use crate::note_file::{self, FrontMatter};
 
 pub type StoreResult<T> = Result<T, String>;
 
 fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn content_hash(text: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn mtime_rfc3339(path: &Path) -> String {
@@ -485,6 +494,115 @@ pub fn build_fts_query(raw: &str) -> String {
         .map(|tok| format!("\"{}\"*", tok.replace('"', "\"\"")))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Re-embeds any active note whose text has changed since it was last
+/// embedded (or that's never been embedded), and drops embedding rows for
+/// notes that are gone or moved to Recently Deleted. Runs lazily from
+/// `smart_search` rather than on every save, so a note that's never
+/// searched never costs an Ollama round trip; a note whose text hasn't
+/// changed since its last embedding is skipped via `content_hash`.
+pub fn ensure_embeddings_current(conn: &Connection) -> StoreResult<()> {
+    let active_notes: Vec<(String, String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, title, plaintext_content FROM notes WHERE deleted_at IS NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+    };
+    let active_ids: Vec<&str> = active_notes.iter().map(|(id, _, _)| id.as_str()).collect();
+
+    let embedded_ids: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT note_id FROM note_embeddings")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+    };
+    for id in &embedded_ids {
+        if !active_ids.contains(&id.as_str()) {
+            conn.execute("DELETE FROM note_embeddings WHERE note_id = ?1", [id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    for (id, title, body) in active_notes {
+        let text = format!("{title}\n\n{body}");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let hash = content_hash(&text);
+
+        let existing_hash: Option<String> = conn
+            .query_row(
+                "SELECT content_hash FROM note_embeddings WHERE note_id = ?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .ok();
+        if existing_hash.as_deref() == Some(hash.as_str()) {
+            continue;
+        }
+
+        let vector = embeddings::embed(&text)?;
+        let bytes = embeddings::vector_to_bytes(&vector);
+        conn.execute(
+            "INSERT INTO note_embeddings (note_id, model, content_hash, vector, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(note_id) DO UPDATE SET
+               model = excluded.model,
+               content_hash = excluded.content_hash,
+               vector = excluded.vector,
+               updated_at = excluded.updated_at",
+            params![id, embeddings::MODEL, hash, bytes, now_rfc3339()],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Semantic ("Smart") search: embeds `query`, ranks every active note's
+/// stored embedding by cosine similarity, and returns the top matches'
+/// ids (best first). Re-embeds any stale/missing notes first, so results
+/// always reflect current on-disk content. Errors (most commonly: Ollama
+/// isn't running) propagate as-is — the caller falls back to FTS5 search.
+pub fn smart_search(conn: &Connection, query: &str, limit: usize) -> StoreResult<Vec<String>> {
+    ensure_embeddings_current(conn)?;
+
+    let query_vector = embeddings::embed(query)?;
+
+    let rows: Vec<(String, Vec<u8>)> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT ne.note_id, ne.vector
+                 FROM note_embeddings ne
+                 JOIN notes n ON n.id = ne.note_id
+                 WHERE n.deleted_at IS NULL",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+    };
+
+    let mut scored: Vec<(String, f32)> = rows
+        .into_iter()
+        .map(|(id, bytes)| {
+            let vector = embeddings::bytes_to_vector(&bytes);
+            let score = embeddings::cosine_similarity(&query_vector, &vector);
+            (id, score)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scored.truncate(limit);
+
+    Ok(scored.into_iter().map(|(id, _)| id).collect())
 }
 
 fn unique_path_for_name(dir: &Path, filename: &std::ffi::OsStr) -> PathBuf {

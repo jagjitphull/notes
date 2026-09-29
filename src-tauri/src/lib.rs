@@ -1,6 +1,7 @@
 mod commands;
 pub mod config;
 pub mod db;
+mod embeddings;
 mod note_file;
 pub mod store;
 mod watcher;
@@ -107,6 +108,8 @@ pub fn run() {
             commands::list_folders,
             commands::list_notes,
             commands::search_notes,
+            commands::smart_search_available,
+            commands::smart_search,
             commands::list_tags,
             commands::get_note_body,
             commands::save_note_body,

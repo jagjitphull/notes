@@ -13,6 +13,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0002_file_backed_notes",
         include_str!("../migrations/0002_file_backed_notes.sql"),
     ),
+    (
+        "0003_smart_search_embeddings",
+        include_str!("../migrations/0003_smart_search_embeddings.sql"),
+    ),
 ];
 
 pub struct DbState(pub Mutex<Connection>);

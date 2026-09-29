@@ -34,6 +34,14 @@ export function searchNotes(query: string): Promise<Note[]> {
   return invoke("search_notes", { query });
 }
 
+export function smartSearchAvailable(): Promise<boolean> {
+  return invoke("smart_search_available");
+}
+
+export function smartSearch(query: string): Promise<Note[]> {
+  return invoke("smart_search", { query });
+}
+
 export function getNoteBody(id: string): Promise<string> {
   return invoke("get_note_body", { id });
 }

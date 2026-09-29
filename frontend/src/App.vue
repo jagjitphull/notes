@@ -25,6 +25,8 @@ import {
   searchNotes,
   setNoteDeleted,
   setNotePinned,
+  smartSearch,
+  smartSearchAvailable,
 } from "./api";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import type { Folder, Note, Tag } from "./types";
@@ -41,6 +43,8 @@ const tags = ref<Tag[]>([]);
 const selectedId = ref<string>("all");
 const searchQuery = ref("");
 const searchResults = ref<Note[] | null>(null);
+const smartSearchSupported = ref(false);
+const smartSearchEnabled = ref(false);
 const selectedNoteId = ref<string | null>(null);
 const editingBody = ref("");
 const suppressAutosave = ref(false);
@@ -77,6 +81,8 @@ onMounted(async () => {
     await refreshData();
   }
   loading.value = false;
+
+  smartSearchSupported.value = await smartSearchAvailable().catch(() => false);
 });
 
 onUnmounted(() => {
@@ -107,6 +113,22 @@ const isSearching = computed(() => searchQuery.value.trim().length > 0);
 // to the current folder/tag/trash view" behavior, better matching.
 const searchPool = computed(() => (isSearching.value ? searchResults.value ?? [] : notes.value));
 
+async function runSearch(trimmed: string) {
+  if (smartSearchEnabled.value) {
+    try {
+      searchResults.value = await smartSearch(trimmed);
+      return;
+    } catch {
+      // Ollama most likely stopped running mid-session: fall back to
+      // regular search and stop offering Smart Search for the rest of
+      // this session rather than repeatedly failing on every keystroke.
+      smartSearchSupported.value = false;
+      smartSearchEnabled.value = false;
+    }
+  }
+  searchResults.value = await searchNotes(trimmed);
+}
+
 watch(searchQuery, (q) => {
   if (searchTimer !== undefined) clearTimeout(searchTimer);
   const trimmed = q.trim();
@@ -114,9 +136,15 @@ watch(searchQuery, (q) => {
     searchResults.value = null;
     return;
   }
-  searchTimer = setTimeout(async () => {
-    searchResults.value = await searchNotes(trimmed);
-  }, 150);
+  // Smart Search embeds text via a local model on every call, so it gets
+  // a longer debounce than plain FTS5 search to avoid firing on every
+  // keystroke.
+  searchTimer = setTimeout(() => runSearch(trimmed), smartSearchEnabled.value ? 400 : 150);
+});
+
+watch(smartSearchEnabled, () => {
+  const trimmed = searchQuery.value.trim();
+  if (trimmed) runSearch(trimmed);
 });
 
 const baseNotes = computed(() => {
@@ -155,7 +183,10 @@ const filteredNotes = computed(() => {
 });
 
 const listTitle = computed(() => {
-  if (isSearching.value) return `"${searchQuery.value.trim()}"`;
+  if (isSearching.value) {
+    const prefix = smartSearchEnabled.value ? "Smart Search: " : "";
+    return `${prefix}"${searchQuery.value.trim()}"`;
+  }
   if (selectedId.value === "all") return "All Notes";
   if (selectedId.value === "recently-deleted") return "Recently Deleted";
   if (selectedId.value.startsWith("tag:")) {
@@ -440,12 +471,14 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         ref="sidebarRef"
         v-model:selected-id="selectedId"
         v-model:search-query="searchQuery"
+        v-model:smart-search-enabled="smartSearchEnabled"
         style="grid-column: 1"
         :folders="folders"
         :tags="tags"
         :all-count="allCount"
         :deleted-count="deletedCount"
         :folder-counts="folderCounts"
+        :smart-search-supported="smartSearchSupported"
         @new-folder="promptNewFolder('')"
         @folder-contextmenu="onFolderContextmenu"
       />

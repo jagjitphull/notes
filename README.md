@@ -37,6 +37,7 @@ src-tauri/    Rust backend
   src/config.rs     Persists the chosen notes-root path
   src/note_file.rs  Front matter <-> Markdown file parsing/serialization
   src/store.rs      Directory scan, index rebuild, note CRUD (file + DB)
+  src/embeddings.rs Ollama client + cosine similarity for Smart Search
   src/watcher.rs    Filesystem watcher -> re-index -> notify the frontend
   src/commands.rs   Tauri commands exposed to the frontend
 ```
@@ -118,3 +119,14 @@ cross-distro store distribution becomes a goal.
   localStorage-persisted widths; and an in-editor tag UI (chip list with
   add/remove) backed by the existing YAML front-matter tags, including
   garbage collection of tag rows no longer referenced by any note.
+- **Smart Search (optional, local AI/RAG)**: semantic search over note
+  content via a local [Ollama](https://ollama.com) instance — nothing
+  leaves the machine. Run `ollama pull nomic-embed-text` and keep Ollama
+  running to enable it; a sparkle toggle then appears in the search box
+  next to regular search. Notes are embedded lazily (only once actually
+  searched, and only re-embedded when their text changes) and ranked by
+  brute-force cosine similarity — no vector-index dependency, which is
+  overkill for a personal notes vault. If Ollama isn't installed or
+  running, the toggle simply doesn't appear and search behaves exactly as
+  before; if it stops responding mid-session, Smart Search silently falls
+  back to regular FTS5 search.

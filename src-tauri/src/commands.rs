@@ -228,6 +228,52 @@ pub fn search_notes(db_state: State<DbState>, query: String) -> Result<Vec<NoteL
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// Fast reachability check so the frontend can decide whether to show the
+/// Smart Search toggle at all — Ollama not being installed/running is the
+/// expected common case, not an error, so this returns a plain bool rather
+/// than surfacing a failure.
+#[tauri::command]
+pub fn smart_search_available() -> bool {
+    crate::embeddings::is_available()
+}
+
+/// Semantic search over note content via local Ollama embeddings, ranked
+/// by cosine similarity (see `store::smart_search`). Errors here (almost
+/// always: Ollama isn't reachable) are meant to be caught by the frontend
+/// and silently fall back to `search_notes`.
+#[tauri::command]
+pub fn smart_search(db_state: State<DbState>, query: String) -> Result<Vec<NoteListItemDto>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    let ranked_ids = store::smart_search(&conn, trimmed, 30)?;
+    if ranked_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = ranked_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!("SELECT {NOTE_LIST_ITEM_COLUMNS} FROM notes n WHERE n.id IN ({placeholders})");
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let query_params: Vec<&dyn rusqlite::ToSql> =
+        ranked_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+    let rows = stmt
+        .query_map(query_params.as_slice(), map_note_list_item)
+        .map_err(|e| e.to_string())?;
+
+    let mut by_id: std::collections::HashMap<String, NoteListItemDto> = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|dto| (dto.id.clone(), dto))
+        .collect();
+
+    // Re-apply the ranking: the SQL above came back in arbitrary IN(...) order.
+    Ok(ranked_ids.into_iter().filter_map(|id| by_id.remove(&id)).collect())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TagDto {

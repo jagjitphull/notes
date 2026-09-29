@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import Icon from "./icons/Icon.vue";
 import type { Folder, Tag } from "../types";
 import { useTheme, type ThemePreference } from "../composables/useTheme";
 
@@ -44,10 +45,7 @@ defineExpose({ focusSearch });
 <template>
   <nav class="sidebar" :aria-label="t('sidebar.navLabel')">
     <div class="search-box">
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.6" />
-        <path d="M13 13L17.5 17.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-      </svg>
+      <Icon name="search" />
       <input
         ref="searchInputRef"
         v-model="searchQuery"
@@ -65,14 +63,7 @@ defineExpose({ focusSearch });
         :aria-pressed="smartSearchEnabled"
         @click="smartSearchEnabled = !smartSearchEnabled"
       >
-        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path
-            d="M8.5 2.5c.28 0 .5.24.44.5l-.62 2.67 2.67-.62a.46.46 0 0 1 .5.94l-2.67.62.62 2.67a.46.46 0 0 1-.94.5l-.62-2.67-2.67.62a.46.46 0 0 1-.5-.94l2.67-.62-.62-2.67a.46.46 0 0 1 .44-.5Z"
-          />
-          <path
-            d="M14.75 10.5c.22 0 .4.15.44.36l.3 1.4 1.4.3a.45.45 0 0 1 0 .88l-1.4.3-.3 1.4a.45.45 0 0 1-.88 0l-.3-1.4-1.4-.3a.45.45 0 0 1 0-.88l1.4-.3.3-1.4a.45.45 0 0 1 .44-.36Z"
-          />
-        </svg>
+        <Icon name="sparkle" />
       </button>
     </div>
 
@@ -84,10 +75,7 @@ defineExpose({ focusSearch });
           :aria-current="selectedId === 'all' ? 'true' : undefined"
           @click="selectedId = 'all'"
         >
-          <svg class="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <rect x="3" y="3" width="14" height="14" rx="3" stroke="currentColor" stroke-width="1.5" />
-            <path d="M6.5 7.5h7M6.5 10h7M6.5 12.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
+          <Icon class="nav-icon" name="notesList" />
           <span class="nav-label">{{ t('common.allNotes') }}</span>
           <span class="nav-count">{{ allCount }}</span>
         </button>
@@ -103,9 +91,7 @@ defineExpose({ focusSearch });
           :aria-label="t('common.newFolder')"
           @click="emit('newFolder')"
         >
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+          <Icon name="plus" />
         </button>
       </div>
       <ul class="nav-list">
@@ -117,11 +103,7 @@ defineExpose({ focusSearch });
             @click="selectedId = folder.id"
             @contextmenu.prevent="emit('folderContextmenu', $event, folder)"
           >
-            <svg class="nav-icon folder-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                d="M3 5.5A1.5 1.5 0 0 1 4.5 4h3.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12a1.5 1.5 0 0 0 1.06.44H15.5A1.5 1.5 0 0 1 17 7.5v7A1.5 1.5 0 0 1 15.5 16h-11A1.5 1.5 0 0 1 3 14.5v-9Z"
-              />
-            </svg>
+            <Icon class="nav-icon folder-icon" name="folder" />
             <span class="nav-label">{{ folder.name }}</span>
             <span class="nav-count">{{ folderCounts[folder.id] ?? 0 }}</span>
           </button>
@@ -155,15 +137,7 @@ defineExpose({ focusSearch });
         :aria-current="selectedId === 'recently-deleted' ? 'true' : undefined"
         @click="selectedId = 'recently-deleted'"
       >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path
-            d="M5 6.5h10M8.25 6.5V5a1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1v1.5M8.5 9.5v4M11.5 9.5v4M5.75 6.5l.6 8.1a1.5 1.5 0 0 0 1.496 1.4h4.308a1.5 1.5 0 0 0 1.496-1.4l.6-8.1"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <Icon class="nav-icon" name="trash" />
         <span class="nav-label">{{ t('common.recentlyDeleted') }}</span>
         <span class="nav-count">{{ deletedCount }}</span>
       </button>
@@ -174,17 +148,7 @@ defineExpose({ focusSearch });
         :title="t('sidebar.appearanceTitle', { label: themeLabels[preference] })"
         :aria-label="t('sidebar.appearanceLabel', { label: themeLabels[preference] })"
       >
-        <svg v-if="preference === 'dark'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path d="M10 2.5a7.5 7.5 0 1 0 7.35 9.02.75.75 0 0 0-.9-.88 5.8 5.8 0 0 1-7.09-7.09.75.75 0 0 0-.88-.9c-.36.06-.72.13-1.06.23A7.53 7.53 0 0 0 10 2.5Z" />
-        </svg>
-        <svg v-else-if="preference === 'light'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <circle cx="10" cy="10" r="3.5" />
-          <path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.36 4.64l-1.42 1.42M6.06 13.94l-1.42 1.42M15.36 15.36l-1.42-1.42M6.06 6.06 4.64 4.64" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-        </svg>
-        <svg v-else viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <rect x="2.5" y="4.5" width="15" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4" />
-          <path d="M7 17.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-        </svg>
+        <Icon :name="preference === 'dark' ? 'moon' : preference === 'light' ? 'sun' : 'monitor'" />
         <span class="nav-label">{{ themeLabels[preference] }}</span>
       </button>
     </div>

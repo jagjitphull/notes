@@ -10,6 +10,8 @@ import Image from "@tiptap/extension-image";
 import HighlightBase from "@tiptap/extension-highlight";
 import { Markdown } from "tiptap-markdown";
 import markdownItMark from "markdown-it-mark";
+import Icon from "./icons/Icon.vue";
+import type { IconName } from "./icons/icons";
 import type { Folder, Note, Tag } from "../types";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
@@ -157,7 +159,7 @@ const formattedDate = computed(() => {
 
 type ToolbarAction = {
   label: string;
-  icon: string;
+  icon: IconName;
   isActive: () => boolean;
   run: () => void;
 };
@@ -167,18 +169,18 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   if (!e) return [];
   const chain = () => e.chain().focus();
   return [
-    { label: t("editor.toolbar.bold"), icon: "B", isActive: () => e.isActive("bold"), run: () => chain().toggleBold().run() },
-    { label: t("editor.toolbar.italic"), icon: "I", isActive: () => e.isActive("italic"), run: () => chain().toggleItalic().run() },
-    { label: t("editor.toolbar.underline"), icon: "U", isActive: () => e.isActive("underline"), run: () => chain().toggleUnderline().run() },
-    { label: t("editor.toolbar.strikethrough"), icon: "S", isActive: () => e.isActive("strike"), run: () => chain().toggleStrike().run() },
-    { label: t("editor.toolbar.highlight"), icon: "✎", isActive: () => e.isActive("highlight"), run: () => chain().toggleHighlight().run() },
-    { label: t("editor.toolbar.heading1"), icon: "H1", isActive: () => e.isActive("heading", { level: 1 }), run: () => chain().toggleHeading({ level: 1 }).run() },
-    { label: t("editor.toolbar.heading2"), icon: "H2", isActive: () => e.isActive("heading", { level: 2 }), run: () => chain().toggleHeading({ level: 2 }).run() },
-    { label: t("editor.toolbar.checklist"), icon: "☑", isActive: () => e.isActive("taskList"), run: () => chain().toggleTaskList().run() },
-    { label: t("editor.toolbar.bulletList"), icon: "•", isActive: () => e.isActive("bulletList"), run: () => chain().toggleBulletList().run() },
-    { label: t("editor.toolbar.numberedList"), icon: "1.", isActive: () => e.isActive("orderedList"), run: () => chain().toggleOrderedList().run() },
-    { label: t("editor.toolbar.codeBlock"), icon: "</>", isActive: () => e.isActive("codeBlock"), run: () => chain().toggleCodeBlock().run() },
-    { label: t("editor.toolbar.quote"), icon: "”", isActive: () => e.isActive("blockquote"), run: () => chain().toggleBlockquote().run() },
+    { label: t("editor.toolbar.bold"), icon: "bold", isActive: () => e.isActive("bold"), run: () => chain().toggleBold().run() },
+    { label: t("editor.toolbar.italic"), icon: "italic", isActive: () => e.isActive("italic"), run: () => chain().toggleItalic().run() },
+    { label: t("editor.toolbar.underline"), icon: "underline", isActive: () => e.isActive("underline"), run: () => chain().toggleUnderline().run() },
+    { label: t("editor.toolbar.strikethrough"), icon: "strikethrough", isActive: () => e.isActive("strike"), run: () => chain().toggleStrike().run() },
+    { label: t("editor.toolbar.highlight"), icon: "highlight", isActive: () => e.isActive("highlight"), run: () => chain().toggleHighlight().run() },
+    { label: t("editor.toolbar.heading1"), icon: "heading1", isActive: () => e.isActive("heading", { level: 1 }), run: () => chain().toggleHeading({ level: 1 }).run() },
+    { label: t("editor.toolbar.heading2"), icon: "heading2", isActive: () => e.isActive("heading", { level: 2 }), run: () => chain().toggleHeading({ level: 2 }).run() },
+    { label: t("editor.toolbar.checklist"), icon: "checklist", isActive: () => e.isActive("taskList"), run: () => chain().toggleTaskList().run() },
+    { label: t("editor.toolbar.bulletList"), icon: "bulletList", isActive: () => e.isActive("bulletList"), run: () => chain().toggleBulletList().run() },
+    { label: t("editor.toolbar.numberedList"), icon: "numberedList", isActive: () => e.isActive("orderedList"), run: () => chain().toggleOrderedList().run() },
+    { label: t("editor.toolbar.codeBlock"), icon: "code", isActive: () => e.isActive("codeBlock"), run: () => chain().toggleCodeBlock().run() },
+    { label: t("editor.toolbar.quote"), icon: "quote", isActive: () => e.isActive("blockquote"), run: () => chain().toggleBlockquote().run() },
   ];
 });
 </script>
@@ -199,7 +201,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             :disabled="isDeleted"
             @click="action.run"
           >
-            {{ action.icon }}
+            <Icon :name="action.icon" />
           </button>
         </div>
         <div class="toolbar-right">
@@ -213,9 +215,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             :disabled="isDeleted"
             @click="emit('togglePin')"
           >
-            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path d="M11.5 2.5a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4 0l-.2-.2-2.6 2.6.6 2.9a.75.75 0 0 1-1.27.68l-2.9-2.9-4 4a.6.6 0 0 1-.85-.85l4-4-2.9-2.9a.75.75 0 0 1 .68-1.27l2.9.6 2.6-2.6-.2-.2a1 1 0 0 1 0-1.4l.7-.7Z" />
-            </svg>
+            <Icon name="pin" />
           </button>
           <button
             class="icon-button"
@@ -223,15 +223,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             :aria-label="isDeleted ? t('common.restore') : t('common.delete')"
             @click="emit('toggleDeleted')"
           >
-            <svg v-if="isDeleted" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <path d="M4 10a6 6 0 1 1 2 4.5M4 10V6M4 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <svg v-else viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <path
-                d="M5 6.5h10M8.25 6.5V5a1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1v1.5M8.5 9.5v4M11.5 9.5v4M5.75 6.5l.6 8.1a1.5 1.5 0 0 0 1.496 1.4h4.308a1.5 1.5 0 0 0 1.496-1.4l.6-8.1"
-                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-              />
-            </svg>
+            <Icon :name="isDeleted ? 'restore' : 'trash'" />
           </button>
         </div>
       </div>
@@ -259,10 +251,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
     </template>
 
     <div v-else class="empty-editor">
-      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
-        <rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" stroke-width="2" />
-        <path d="M15 16h18M15 23h18M15 30h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-      </svg>
+      <Icon name="document" />
       <p>{{ t('editor.emptyState') }}</p>
     </div>
   </main>
@@ -297,16 +286,22 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 }
 
 .format-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 26px;
   height: 26px;
-  padding: 0 6px;
+  padding: 0 5px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 700;
   cursor: pointer;
+}
+
+.format-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .format-button:hover:not(:disabled) {

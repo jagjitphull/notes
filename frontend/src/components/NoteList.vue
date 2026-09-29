@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import Icon from "./icons/Icon.vue";
 import type { Note } from "../types";
 
 const props = defineProps<{
@@ -72,9 +73,7 @@ function preview(note: Note): string {
         :aria-label="t('common.newNote')"
         @click="emit('create')"
       >
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
+        <Icon name="plus" />
       </button>
     </div>
 
@@ -102,9 +101,7 @@ function preview(note: Note): string {
             >
               <div class="note-title-row">
                 <span class="note-title">{{ note.title || t('common.newNote') }}</span>
-                <svg v-if="note.isPinned" class="pin-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path d="M11.5 2.5a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4 0l-.2-.2-2.6 2.6.6 2.9a.75.75 0 0 1-1.27.68l-2.9-2.9-4 4a.6.6 0 0 1-.85-.85l4-4-2.9-2.9a.75.75 0 0 1 .68-1.27l2.9.6 2.6-2.6-.2-.2a1 1 0 0 1 0-1.4l.7-.7Z" />
-                </svg>
+                <Icon v-if="note.isPinned" class="pin-icon" name="pin" />
               </div>
               <div class="note-meta">{{ formatDate(note.updatedAt) }}</div>
               <div class="note-preview">{{ preview(note) }}</div>

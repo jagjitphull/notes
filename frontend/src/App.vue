@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import Icon from "./components/icons/Icon.vue";
 import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
 import Editor from "./components/Editor.vue";
@@ -493,10 +494,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :aria-pressed="!sidebarCollapsed"
         @click="sidebarCollapsed = !sidebarCollapsed"
       >
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" />
-          <line x1="8" y1="4" x2="8" y2="16" stroke="currentColor" stroke-width="1.5" />
-        </svg>
+        <Icon name="panelLeft" />
       </button>
       <button
         class="pane-toggle"
@@ -506,12 +504,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :aria-pressed="!listCollapsed"
         @click="listCollapsed = !listCollapsed"
       >
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" />
-          <line x1="6.5" y1="7.5" x2="13.5" y2="7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          <line x1="6.5" y1="10" x2="13.5" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          <line x1="6.5" y1="12.5" x2="11" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
+        <Icon name="panelList" />
       </button>
 
       <button
@@ -521,10 +514,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :title="t('topBar.installUpdate', { version: updateVersion })"
         @click="installUpdate"
       >
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M10 3v10M6 9.5 10 13.5 14 9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M4 16.5h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
+        <Icon name="download" />
         <span>{{ updateInstalling ? t('topBar.installing') : t('topBar.updateTo', { version: updateVersion }) }}</span>
       </button>
     </div>

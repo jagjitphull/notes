@@ -112,3 +112,9 @@ cross-distro store distribution becomes a goal.
   rather than quitting, so the app keeps syncing in the background; Quit
   from the tray menu exits for real) and a 30-day auto-purge of Recently
   Deleted, matching Apple Notes' retention window.
+- **Editor & layout extras**: a text highlighter mark (`==text==`,
+  Obsidian-compatible, round-trips through Markdown); resizable and
+  collapsible sidebar/note-list panes with drag handles and
+  localStorage-persisted widths; and an in-editor tag UI (chip list with
+  add/remove) backed by the existing YAML front-matter tags, including
+  garbage collection of tag rows no longer referenced by any note.

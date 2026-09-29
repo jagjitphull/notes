@@ -108,3 +108,7 @@ cross-distro store distribution becomes a goal.
 - **Phase 5** (search & polish): done — FTS5-backed search, keyboard
   shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation), and Linux
   packaging (.deb + AppImage) are all in place.
+- **Post-launch polish**: a system tray icon (closing the window hides it
+  rather than quitting, so the app keeps syncing in the background; Quit
+  from the tray menu exits for real) and a 30-day auto-purge of Recently
+  Deleted, matching Apple Notes' retention window.

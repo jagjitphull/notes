@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A minimalist, local-first note-taking app for Linux"
 authors = ["jagjitphull"]
 repository = "https://github.com/jagjitphull/notes"
+license = "MIT"
 edition = "2024"
 rust-version = "1.90"
 
@@ -31,3 +32,4 @@ notify = "6"
 notify-debouncer-mini = "0.4"
 tauri-plugin-dialog = "2"
 ureq = { version = "2", default-features = false, features = ["json"] }
+tauri-plugin-single-instance = "2"

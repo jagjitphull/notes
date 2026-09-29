@@ -168,3 +168,12 @@ cross-distro store distribution becomes a goal.
   running, the toggle simply doesn't appear and search behaves exactly as
   before; if it stops responding mid-session, Smart Search silently falls
   back to regular FTS5 search.
+- **Hardening**: single-instance enforcement (opening the app while it's
+  already running just focuses the existing window instead of starting a
+  second process — matters here specifically because two processes would
+  otherwise both open the same SQLite index and watch the same notes
+  folder, racing each other).
+
+## License
+
+[MIT](LICENSE)

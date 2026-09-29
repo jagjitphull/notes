@@ -19,7 +19,25 @@ use watcher::WatcherState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Must be registered before any other plugin (Tauri's own
+    // requirement): a second launch is redirected here instead of
+    // starting a second process, which matters for this app specifically
+    // because two processes would both open the same SQLite index and
+    // watch the same notes folder, racing each other. Desktop-only API,
+    // hence the cfg guard (this app has no mobile target anyway).
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if cfg!(debug_assertions) {

@@ -59,9 +59,9 @@ function preview(note: Note): string {
 </script>
 
 <template>
-  <section class="note-list">
+  <section class="note-list" aria-label="Notes list">
     <div class="pane-header">
-      <h1 class="list-title">{{ title }}</h1>
+      <h2 class="list-title">{{ title }}</h2>
       <button
         v-if="canCreate"
         class="icon-button new-note-button"
@@ -90,6 +90,7 @@ function preview(note: Note): string {
             <button
               class="note-item"
               :class="{ active: selectedId === note.id }"
+              :aria-current="selectedId === note.id ? 'true' : undefined"
               @click="selectedId = note.id"
               @contextmenu.prevent="
                 selectedId = note.id;

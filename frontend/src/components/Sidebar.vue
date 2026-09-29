@@ -40,7 +40,7 @@ defineExpose({ focusSearch });
 </script>
 
 <template>
-  <nav class="sidebar">
+  <nav class="sidebar" aria-label="Folders and tags">
     <div class="search-box">
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.6" />
@@ -79,6 +79,7 @@ defineExpose({ focusSearch });
         <button
           class="nav-item"
           :class="{ active: selectedId === 'all' }"
+          :aria-current="selectedId === 'all' ? 'true' : undefined"
           @click="selectedId = 'all'"
         >
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -110,6 +111,7 @@ defineExpose({ focusSearch });
           <button
             class="nav-item"
             :class="{ active: selectedId === folder.id }"
+            :aria-current="selectedId === folder.id ? 'true' : undefined"
             @click="selectedId = folder.id"
             @contextmenu.prevent="emit('folderContextmenu', $event, folder)"
           >
@@ -131,7 +133,12 @@ defineExpose({ focusSearch });
       </div>
       <ul class="nav-list">
         <li v-for="tag in tags" :key="tag.id">
-          <button class="nav-item" :class="{ active: selectedId === `tag:${tag.id}` }" @click="selectedId = `tag:${tag.id}`">
+          <button
+            class="nav-item"
+            :class="{ active: selectedId === `tag:${tag.id}` }"
+            :aria-current="selectedId === `tag:${tag.id}` ? 'true' : undefined"
+            @click="selectedId = `tag:${tag.id}`"
+          >
             <span class="nav-icon tag-icon" aria-hidden="true">#</span>
             <span class="nav-label">{{ tag.name }}</span>
           </button>
@@ -143,6 +150,7 @@ defineExpose({ focusSearch });
       <button
         class="nav-item"
         :class="{ active: selectedId === 'recently-deleted' }"
+        :aria-current="selectedId === 'recently-deleted' ? 'true' : undefined"
         @click="selectedId = 'recently-deleted'"
       >
         <svg class="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -158,7 +166,12 @@ defineExpose({ focusSearch });
         <span class="nav-count">{{ deletedCount }}</span>
       </button>
 
-      <button class="theme-toggle" @click="cyclePreference" :title="`Appearance: ${themeLabels[preference]} (click to change)`">
+      <button
+        class="theme-toggle"
+        @click="cyclePreference"
+        :title="`Appearance: ${themeLabels[preference]} (click to change)`"
+        :aria-label="`Appearance: ${themeLabels[preference]}. Click to change.`"
+      >
         <svg v-if="preference === 'dark'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M10 2.5a7.5 7.5 0 1 0 7.35 9.02.75.75 0 0 0-.9-.88 5.8 5.8 0 0 1-7.09-7.09.75.75 0 0 0-.88-.9c-.36.06-.72.13-1.06.23A7.53 7.53 0 0 0 10 2.5Z" />
         </svg>

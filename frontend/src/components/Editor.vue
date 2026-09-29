@@ -78,6 +78,11 @@ const editor = useEditor({
     }),
   ],
   editorProps: {
+    attributes: {
+      role: "textbox",
+      "aria-multiline": "true",
+      "aria-label": "Note content",
+    },
     handleDrop(view, event) {
       const files = Array.from(event.dataTransfer?.files ?? []).filter((f) =>
         f.type.startsWith("image/"),
@@ -186,6 +191,8 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             class="format-button"
             :class="{ active: action.isActive() }"
             :title="action.label"
+            :aria-label="action.label"
+            :aria-pressed="action.isActive()"
             :disabled="isDeleted"
             @click="action.run"
           >
@@ -198,6 +205,8 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             class="icon-button"
             :class="{ active: note.isPinned }"
             :title="note.isPinned ? 'Unpin' : 'Pin'"
+            :aria-label="note.isPinned ? 'Unpin' : 'Pin'"
+            :aria-pressed="note.isPinned"
             :disabled="isDeleted"
             @click="emit('togglePin')"
           >
@@ -208,6 +217,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           <button
             class="icon-button"
             :title="isDeleted ? 'Restore' : 'Delete'"
+            :aria-label="isDeleted ? 'Restore' : 'Delete'"
             @click="emit('toggleDeleted')"
           >
             <svg v-if="isDeleted" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -303,7 +313,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 
 .format-button.active {
   background: var(--bg-selected);
-  color: var(--accent-blue);
+  color: var(--accent-blue-text);
 }
 
 .format-button:disabled {
@@ -381,7 +391,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 
 .add-tag-button:hover {
   border-color: var(--accent-blue);
-  color: var(--accent-blue);
+  color: var(--accent-blue-text);
 }
 
 .editor-canvas {
@@ -491,7 +501,10 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 
 .editor-content :deep(.ProseMirror mark) {
   background: var(--accent-yellow);
-  color: inherit;
+  /* Not `inherit`: in dark mode that puts near-white body text on a
+     similarly light yellow highlight (~1.2:1 contrast, unreadable).
+     The highlight background needs dark text in both themes. */
+  color: #1c1c1e;
   border-radius: 2px;
   padding: 0 1px;
 }

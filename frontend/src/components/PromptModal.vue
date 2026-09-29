@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 const props = defineProps<{
   title: string;
@@ -11,11 +11,40 @@ const emit = defineEmits<{ confirm: [value: string]; cancel: [] }>();
 
 const value = ref(props.initialValue ?? "");
 const inputRef = ref<HTMLInputElement | null>(null);
+const formRef = ref<HTMLFormElement | null>(null);
+const titleId = `prompt-modal-title-${Math.random().toString(36).slice(2)}`;
+
+let previouslyFocused: HTMLElement | null = null;
 
 onMounted(async () => {
+  previouslyFocused = document.activeElement as HTMLElement | null;
   await nextTick();
   inputRef.value?.focus();
   inputRef.value?.select();
+});
+
+// Dialogs must trap Tab within themselves (WAI-ARIA APG) - otherwise
+// keyboard/screen-reader users can Tab straight into the app behind it
+// while the modal is still open.
+function onKeydownTab(e: KeyboardEvent) {
+  if (e.key !== "Tab" || !formRef.value) return;
+  const focusable = formRef.value.querySelectorAll<HTMLElement>(
+    "input, button:not(:disabled)",
+  );
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+onBeforeUnmount(() => {
+  previouslyFocused?.focus();
 });
 
 function submit() {
@@ -27,8 +56,16 @@ function submit() {
 <template>
   <Teleport to="body">
     <div class="modal-backdrop" @click.self="emit('cancel')" @keydown.esc="emit('cancel')">
-      <form class="modal" @submit.prevent="submit">
-        <h2>{{ title }}</h2>
+      <form
+        ref="formRef"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="titleId"
+        @submit.prevent="submit"
+        @keydown="onKeydownTab"
+      >
+        <h2 :id="titleId">{{ title }}</h2>
         <input ref="inputRef" v-model="value" type="text" @keydown.esc="emit('cancel')" />
         <div class="modal-actions">
           <button type="button" class="secondary" @click="emit('cancel')">Cancel</button>

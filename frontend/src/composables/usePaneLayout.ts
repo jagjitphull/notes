@@ -69,6 +69,22 @@ export function usePaneLayout() {
     e.preventDefault();
   }
 
+  // Keyboard equivalent of dragging the handle (Left/Right arrows), for
+  // the resize handles' role="separator" - dragging alone would leave
+  // pane resizing unreachable without a pointer.
+  function stepResize(which: "sidebar" | "list", delta: number) {
+    if (which === "sidebar") {
+      sidebarWidth.value = Math.min(Math.max(sidebarWidth.value + delta, SIDEBAR_MIN), SIDEBAR_MAX);
+    } else {
+      listWidth.value = Math.min(Math.max(listWidth.value + delta, LIST_MIN), LIST_MAX);
+    }
+  }
+
+  const bounds = {
+    sidebar: { min: SIDEBAR_MIN, max: SIDEBAR_MAX },
+    list: { min: LIST_MIN, max: LIST_MAX },
+  };
+
   return {
     sidebarWidth,
     listWidth,
@@ -76,5 +92,7 @@ export function usePaneLayout() {
     listCollapsed,
     gridTemplateColumns,
     startResize,
+    stepResize,
+    bounds,
   };
 }

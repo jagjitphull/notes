@@ -4,15 +4,30 @@
   --bg-editor: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-selected: rgba(10, 132, 255, 0.12);
-  --bg-selected-strong: #0a84ff;
+  /* A notch darker than --accent-blue specifically so white text drawn
+     on top of it (selected note/folder rows) clears WCAG AA's 4.5:1 -
+     the raw accent blue only gets white text to ~3.65:1. */
+  --bg-selected-strong: #0875e2;
 
   --border: #dcdbe0;
   --text-primary: #1c1c1e;
-  --text-secondary: #8a8a8e;
-  --text-tertiary: #b5b4ba;
+  /* text-secondary/tertiary are tuned to clear WCAG AA against the
+     lightest surface each is used on (bg-editor, #fff) - the original
+     values measured 3.06-3.44:1 and 1.83-1.97:1 respectively, both
+     failing AA (needs 4.5:1 normal text / 3:1 large text/UI). */
+  --text-secondary: #6e6e73;
+  --text-tertiary: #797979;
   --accent-yellow: #f2b705;
   --accent-blue: #0a84ff;
-  --danger: #ff453a;
+  /* --accent-blue itself stays vivid for icons/borders (WCAG's non-text
+     3:1 bar, which it already clears) - this is for the few spots where
+     it's actual readable text, which needs the stricter 4.5:1. */
+  --accent-blue-text: #0761bc;
+  --pill-blue-bg: #dceaff;
+  --pill-blue-text: #0a5cc2;
+  /* The iOS system red (#ff453a) reads great as an icon/border but only
+     hits ~3.4:1 as text on white - well under AA's 4.5:1. */
+  --danger: #d70015;
 
   --sans:
     -apple-system, system-ui, "Segoe UI", Ubuntu, Cantarell, Roboto, sans-serif;
@@ -32,13 +47,21 @@
     --bg-editor: #28282b;
     --bg-hover: rgba(255, 255, 255, 0.05);
     --bg-selected: rgba(10, 132, 255, 0.18);
-    --bg-selected-strong: #0a84ff;
+    --bg-selected-strong: #0875e2;
 
     --border: #3c3c40;
     --text-primary: #d8d8dc;
     --text-secondary: #98989d;
-    --text-tertiary: #6e6e73;
+    /* Original #6e6e73 measured ~2.8-3.0:1 here, under AA's 3:1 floor
+       even for large/UI text. */
+    --text-tertiary: #8e8e93;
     --accent-yellow: #e8c04a;
+    --accent-blue-text: #5aa9ff;
+    --pill-blue-bg: #1c2f4d;
+    --pill-blue-text: #7fb8ff;
+    /* Lighter than the light-mode red so it still clears 4.5:1 on dark
+       surfaces, incl. the hovered menu-item background. */
+    --danger: #ff7267;
   }
 }
 
@@ -48,13 +71,17 @@
   --bg-editor: #28282b;
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-selected: rgba(10, 132, 255, 0.18);
-  --bg-selected-strong: #0a84ff;
+  --bg-selected-strong: #0875e2;
 
   --border: #3c3c40;
   --text-primary: #d8d8dc;
   --text-secondary: #98989d;
-  --text-tertiary: #6e6e73;
+  --text-tertiary: #8e8e93;
   --accent-yellow: #e8c04a;
+  --accent-blue-text: #5aa9ff;
+  --pill-blue-bg: #1c2f4d;
+  --pill-blue-text: #7fb8ff;
+  --danger: #ff7267;
 }
 
 * {

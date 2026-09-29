@@ -72,7 +72,7 @@ async function useDefaultLocal() {
         </button>
       </div>
 
-      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
     </div>
   </div>
 </template>

@@ -32,7 +32,16 @@ import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import type { Folder, Note, Tag } from "./types";
 
-const { sidebarCollapsed, listCollapsed, gridTemplateColumns, startResize } = usePaneLayout();
+const {
+  sidebarCollapsed,
+  listCollapsed,
+  sidebarWidth,
+  listWidth,
+  gridTemplateColumns,
+  startResize,
+  stepResize,
+  bounds: paneBounds,
+} = usePaneLayout();
 const {
   available: updateAvailable,
   version: updateVersion,
@@ -432,6 +441,12 @@ function navigateList(direction: number) {
 }
 
 function onGlobalKeydown(e: KeyboardEvent) {
+  // While a context menu or dialog is open, its own keydown handler owns
+  // the keyboard (WAI-ARIA menu/dialog patterns) - without this guard,
+  // e.g. arrow keys meant to move through the menu also bubble up here
+  // and silently change the selected note underneath it.
+  if (contextMenu.value || promptModal.value) return;
+
   const mod = e.ctrlKey || e.metaKey;
 
   if (mod && e.key.toLowerCase() === "n") {
@@ -470,6 +485,8 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         class="pane-toggle"
         :class="{ active: !sidebarCollapsed }"
         title="Toggle Sidebar"
+        aria-label="Toggle Sidebar"
+        :aria-pressed="!sidebarCollapsed"
         @click="sidebarCollapsed = !sidebarCollapsed"
       >
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -481,6 +498,8 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         class="pane-toggle"
         :class="{ active: !listCollapsed }"
         title="Toggle Note List"
+        aria-label="Toggle Note List"
+        :aria-pressed="!listCollapsed"
         @click="listCollapsed = !listCollapsed"
       >
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -527,7 +546,16 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-if="!sidebarCollapsed"
         class="resize-handle"
         style="grid-column: 2"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        :aria-valuenow="sidebarWidth"
+        :aria-valuemin="paneBounds.sidebar.min"
+        :aria-valuemax="paneBounds.sidebar.max"
+        tabindex="0"
         @pointerdown="startResize('sidebar', $event)"
+        @keydown.left="stepResize('sidebar', -10)"
+        @keydown.right="stepResize('sidebar', 10)"
       />
 
       <NoteList
@@ -546,7 +574,16 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-if="!listCollapsed"
         class="resize-handle"
         style="grid-column: 4"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize note list"
+        :aria-valuenow="listWidth"
+        :aria-valuemin="paneBounds.list.min"
+        :aria-valuemax="paneBounds.list.max"
+        tabindex="0"
         @pointerdown="startResize('list', $event)"
+        @keydown.left="stepResize('list', -10)"
+        @keydown.right="stepResize('list', 10)"
       />
 
       <Editor
@@ -626,8 +663,11 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   padding: 5px 10px 5px 8px;
   border: none;
   border-radius: 999px;
-  background: rgba(10, 132, 255, 0.15);
-  color: var(--accent-blue);
+  /* Solid per-theme colors rather than a translucent accent-blue tint:
+     the tint composited too pale (light) / too dark (dark) for either a
+     single text color or --accent-blue itself to clear 4.5:1 against. */
+  background: var(--pill-blue-bg);
+  color: var(--pill-blue-text);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -639,7 +679,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 }
 
 .update-available:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.25);
+  filter: brightness(0.95);
 }
 
 .update-available:disabled {
@@ -669,8 +709,14 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 }
 
 .resize-handle:hover,
-.resize-handle:active {
+.resize-handle:active,
+.resize-handle:focus-visible {
   background: var(--accent-blue);
   opacity: 0.5;
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
 }
 </style>

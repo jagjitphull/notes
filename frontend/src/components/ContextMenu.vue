@@ -22,7 +22,15 @@ const menuRef = ref<HTMLUListElement | null>(null);
 // Clamp so the menu never renders off the right/bottom edge of the window.
 const style = ref({ left: `${props.x}px`, top: `${props.y}px` });
 
+let previouslyFocused: HTMLElement | null = null;
+
+function menuItemEls(): HTMLElement[] {
+  return Array.from(menuRef.value?.querySelectorAll<HTMLElement>(".menu-item:not(:disabled)") ?? []);
+}
+
 onMounted(() => {
+  previouslyFocused = document.activeElement as HTMLElement | null;
+
   const el = menuRef.value;
   if (el) {
     const rect = el.getBoundingClientRect();
@@ -34,14 +42,29 @@ onMounted(() => {
     };
   }
   document.addEventListener("keydown", onKeydown);
+  // Move focus into the menu so keyboard/screen-reader users land
+  // somewhere sensible instead of the trigger element underneath.
+  menuItemEls()[0]?.focus();
 });
 
 onUnmounted(() => {
   document.removeEventListener("keydown", onKeydown);
+  previouslyFocused?.focus();
 });
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") emit("close");
+  if (e.key === "Escape") {
+    emit("close");
+    return;
+  }
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const items = menuItemEls();
+  if (items.length === 0) return;
+  e.preventDefault();
+  const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+  const delta = e.key === "ArrowDown" ? 1 : -1;
+  const nextIndex = (currentIndex + delta + items.length) % items.length;
+  items[nextIndex]?.focus();
 }
 
 function run(item: ContextMenuItem) {
@@ -54,12 +77,13 @@ function run(item: ContextMenuItem) {
 <template>
   <Teleport to="body">
     <div class="menu-backdrop" @click="emit('close')" @contextmenu.prevent="emit('close')">
-      <ul ref="menuRef" class="menu" :style="style" @click.stop @contextmenu.stop.prevent>
+      <ul ref="menuRef" class="menu" role="menu" :style="style" @click.stop @contextmenu.stop.prevent>
         <template v-for="(item, i) in items" :key="i">
-          <li v-if="item.separator" class="menu-separator" />
-          <li v-else>
+          <li v-if="item.separator" class="menu-separator" role="separator" />
+          <li v-else role="none">
             <button
               class="menu-item"
+              role="menuitem"
               :class="{ danger: item.danger }"
               :disabled="item.disabled"
               @click="run(item)"

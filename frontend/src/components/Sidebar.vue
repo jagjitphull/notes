@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import type { Folder, Tag } from "../types";
 import { useTheme, type ThemePreference } from "../composables/useTheme";
 
@@ -21,13 +22,14 @@ const selectedId = defineModel<string>("selectedId", { required: true });
 const searchQuery = defineModel<string>("searchQuery", { required: true });
 const smartSearchEnabled = defineModel<boolean>("smartSearchEnabled", { required: true });
 
+const { t } = useI18n();
 const { preference, cyclePreference } = useTheme();
 
-const themeLabels: Record<ThemePreference, string> = {
-  system: "System",
-  light: "Light",
-  dark: "Dark",
-};
+const themeLabels = computed<Record<ThemePreference, string>>(() => ({
+  system: t("sidebar.theme.system"),
+  light: t("sidebar.theme.light"),
+  dark: t("sidebar.theme.dark"),
+}));
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
@@ -40,7 +42,7 @@ defineExpose({ focusSearch });
 </script>
 
 <template>
-  <nav class="sidebar" aria-label="Folders and tags">
+  <nav class="sidebar" :aria-label="t('sidebar.navLabel')">
     <div class="search-box">
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.6" />
@@ -50,16 +52,16 @@ defineExpose({ focusSearch });
         ref="searchInputRef"
         v-model="searchQuery"
         type="text"
-        placeholder="Search"
-        aria-label="Search notes"
+        :placeholder="t('sidebar.searchPlaceholder')"
+        :aria-label="t('sidebar.searchLabel')"
       />
       <button
         v-if="smartSearchSupported"
         class="smart-search-toggle"
         :class="{ active: smartSearchEnabled }"
         type="button"
-        title="Smart Search: semantic search over note meaning, via a local Ollama model"
-        aria-label="Toggle Smart Search"
+        :title="t('sidebar.smartSearchTitle')"
+        :aria-label="t('sidebar.smartSearchToggle')"
         :aria-pressed="smartSearchEnabled"
         @click="smartSearchEnabled = !smartSearchEnabled"
       >
@@ -86,7 +88,7 @@ defineExpose({ focusSearch });
             <rect x="3" y="3" width="14" height="14" rx="3" stroke="currentColor" stroke-width="1.5" />
             <path d="M6.5 7.5h7M6.5 10h7M6.5 12.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
-          <span class="nav-label">All Notes</span>
+          <span class="nav-label">{{ t('common.allNotes') }}</span>
           <span class="nav-count">{{ allCount }}</span>
         </button>
       </li>
@@ -94,11 +96,11 @@ defineExpose({ focusSearch });
 
     <div class="section">
       <div class="section-header">
-        <h2 class="pane-title">Folders</h2>
+        <h2 class="pane-title">{{ t('sidebar.folders') }}</h2>
         <button
           class="icon-button"
-          title="New Folder"
-          aria-label="New Folder"
+          :title="t('common.newFolder')"
+          :aria-label="t('common.newFolder')"
           @click="emit('newFolder')"
         >
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -129,7 +131,7 @@ defineExpose({ focusSearch });
 
     <div class="section">
       <div class="section-header">
-        <h2 class="pane-title">Tags</h2>
+        <h2 class="pane-title">{{ t('sidebar.tags') }}</h2>
       </div>
       <ul class="nav-list">
         <li v-for="tag in tags" :key="tag.id">
@@ -162,15 +164,15 @@ defineExpose({ focusSearch });
             stroke-linejoin="round"
           />
         </svg>
-        <span class="nav-label">Recently Deleted</span>
+        <span class="nav-label">{{ t('common.recentlyDeleted') }}</span>
         <span class="nav-count">{{ deletedCount }}</span>
       </button>
 
       <button
         class="theme-toggle"
         @click="cyclePreference"
-        :title="`Appearance: ${themeLabels[preference]} (click to change)`"
-        :aria-label="`Appearance: ${themeLabels[preference]}. Click to change.`"
+        :title="t('sidebar.appearanceTitle', { label: themeLabels[preference] })"
+        :aria-label="t('sidebar.appearanceLabel', { label: themeLabels[preference] })"
       >
         <svg v-if="preference === 'dark'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M10 2.5a7.5 7.5 0 1 0 7.35 9.02.75.75 0 0 0-.9-.88 5.8 5.8 0 0 1-7.09-7.09.75.75 0 0 0-.88-.9c-.36.06-.72.13-1.06.23A7.53 7.53 0 0 0 10 2.5Z" />

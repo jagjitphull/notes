@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import type { Note } from "../types";
 
 const props = defineProps<{
@@ -16,6 +17,8 @@ const emit = defineEmits<{
 }>();
 
 const selectedId = defineModel<string | null>("selectedId", { default: null });
+
+const { t } = useI18n();
 
 const pinnedCount = computed(() =>
   props.showPinnedSections ? props.notes.filter((n) => n.isPinned).length : 0,
@@ -59,14 +62,14 @@ function preview(note: Note): string {
 </script>
 
 <template>
-  <section class="note-list" aria-label="Notes list">
+  <section class="note-list" :aria-label="t('noteList.sectionLabel')">
     <div class="pane-header">
       <h2 class="list-title">{{ title }}</h2>
       <button
         v-if="canCreate"
         class="icon-button new-note-button"
-        title="New Note"
-        aria-label="New Note"
+        :title="t('common.newNote')"
+        :aria-label="t('common.newNote')"
         @click="emit('create')"
       >
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -76,16 +79,16 @@ function preview(note: Note): string {
     </div>
 
     <p v-if="isTrash" class="trash-notice">
-      Notes are deleted permanently from here after 30 days.
+      {{ t('noteList.trashNotice') }}
     </p>
 
     <div class="scroll-area">
-      <p v-if="notes.length === 0" class="empty-state">No Notes</p>
+      <p v-if="notes.length === 0" class="empty-state">{{ t('noteList.empty') }}</p>
 
       <ul v-else class="items">
         <template v-for="(note, index) in notes" :key="note.id">
-          <li v-if="sectionFor(index) === 'pinned'" class="section-label">Pinned</li>
-          <li v-if="sectionFor(index) === 'notes'" class="section-label">Notes</li>
+          <li v-if="sectionFor(index) === 'pinned'" class="section-label">{{ t('noteList.pinned') }}</li>
+          <li v-if="sectionFor(index) === 'notes'" class="section-label">{{ t('common.notes') }}</li>
           <li>
             <button
               class="note-item"
@@ -98,7 +101,7 @@ function preview(note: Note): string {
               "
             >
               <div class="note-title-row">
-                <span class="note-title">{{ note.title || "New Note" }}</span>
+                <span class="note-title">{{ note.title || t('common.newNote') }}</span>
                 <svg v-if="note.isPinned" class="pin-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                   <path d="M11.5 2.5a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4 0l-.2-.2-2.6 2.6.6 2.9a.75.75 0 0 1-1.27.68l-2.9-2.9-4 4a.6.6 0 0 1-.85-.85l4-4-2.9-2.9a.75.75 0 0 1 .68-1.27l2.9.6 2.6-2.6-.2-.2a1 1 0 0 1 0-1.4l.7-.7Z" />
                 </svg>

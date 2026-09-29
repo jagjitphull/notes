@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { EditorContent, useEditor } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
@@ -52,6 +53,8 @@ const noteTagNames = computed(
 
 const body = defineModel<string>("body", { default: "" });
 
+const { t } = useI18n();
+
 const isDeleted = computed(() => !!props.note?.deletedAt);
 
 const editor = useEditor({
@@ -61,7 +64,7 @@ const editor = useEditor({
     StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    Placeholder.configure({ placeholder: "New Note" }),
+    Placeholder.configure({ placeholder: t("editor.placeholder") }),
     Image,
     Highlight,
     Markdown.configure({
@@ -81,7 +84,7 @@ const editor = useEditor({
     attributes: {
       role: "textbox",
       "aria-multiline": "true",
-      "aria-label": "Note content",
+      "aria-label": t("editor.contentLabel"),
     },
     handleDrop(view, event) {
       const files = Array.from(event.dataTransfer?.files ?? []).filter((f) =>
@@ -164,18 +167,18 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   if (!e) return [];
   const chain = () => e.chain().focus();
   return [
-    { label: "Bold", icon: "B", isActive: () => e.isActive("bold"), run: () => chain().toggleBold().run() },
-    { label: "Italic", icon: "I", isActive: () => e.isActive("italic"), run: () => chain().toggleItalic().run() },
-    { label: "Underline", icon: "U", isActive: () => e.isActive("underline"), run: () => chain().toggleUnderline().run() },
-    { label: "Strikethrough", icon: "S", isActive: () => e.isActive("strike"), run: () => chain().toggleStrike().run() },
-    { label: "Highlight", icon: "✎", isActive: () => e.isActive("highlight"), run: () => chain().toggleHighlight().run() },
-    { label: "Heading 1", icon: "H1", isActive: () => e.isActive("heading", { level: 1 }), run: () => chain().toggleHeading({ level: 1 }).run() },
-    { label: "Heading 2", icon: "H2", isActive: () => e.isActive("heading", { level: 2 }), run: () => chain().toggleHeading({ level: 2 }).run() },
-    { label: "Checklist", icon: "☑", isActive: () => e.isActive("taskList"), run: () => chain().toggleTaskList().run() },
-    { label: "Bullet List", icon: "•", isActive: () => e.isActive("bulletList"), run: () => chain().toggleBulletList().run() },
-    { label: "Numbered List", icon: "1.", isActive: () => e.isActive("orderedList"), run: () => chain().toggleOrderedList().run() },
-    { label: "Code Block", icon: "</>", isActive: () => e.isActive("codeBlock"), run: () => chain().toggleCodeBlock().run() },
-    { label: "Quote", icon: "”", isActive: () => e.isActive("blockquote"), run: () => chain().toggleBlockquote().run() },
+    { label: t("editor.toolbar.bold"), icon: "B", isActive: () => e.isActive("bold"), run: () => chain().toggleBold().run() },
+    { label: t("editor.toolbar.italic"), icon: "I", isActive: () => e.isActive("italic"), run: () => chain().toggleItalic().run() },
+    { label: t("editor.toolbar.underline"), icon: "U", isActive: () => e.isActive("underline"), run: () => chain().toggleUnderline().run() },
+    { label: t("editor.toolbar.strikethrough"), icon: "S", isActive: () => e.isActive("strike"), run: () => chain().toggleStrike().run() },
+    { label: t("editor.toolbar.highlight"), icon: "✎", isActive: () => e.isActive("highlight"), run: () => chain().toggleHighlight().run() },
+    { label: t("editor.toolbar.heading1"), icon: "H1", isActive: () => e.isActive("heading", { level: 1 }), run: () => chain().toggleHeading({ level: 1 }).run() },
+    { label: t("editor.toolbar.heading2"), icon: "H2", isActive: () => e.isActive("heading", { level: 2 }), run: () => chain().toggleHeading({ level: 2 }).run() },
+    { label: t("editor.toolbar.checklist"), icon: "☑", isActive: () => e.isActive("taskList"), run: () => chain().toggleTaskList().run() },
+    { label: t("editor.toolbar.bulletList"), icon: "•", isActive: () => e.isActive("bulletList"), run: () => chain().toggleBulletList().run() },
+    { label: t("editor.toolbar.numberedList"), icon: "1.", isActive: () => e.isActive("orderedList"), run: () => chain().toggleOrderedList().run() },
+    { label: t("editor.toolbar.codeBlock"), icon: "</>", isActive: () => e.isActive("codeBlock"), run: () => chain().toggleCodeBlock().run() },
+    { label: t("editor.toolbar.quote"), icon: "”", isActive: () => e.isActive("blockquote"), run: () => chain().toggleBlockquote().run() },
   ];
 });
 </script>
@@ -204,8 +207,8 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           <button
             class="icon-button"
             :class="{ active: note.isPinned }"
-            :title="note.isPinned ? 'Unpin' : 'Pin'"
-            :aria-label="note.isPinned ? 'Unpin' : 'Pin'"
+            :title="note.isPinned ? t('common.unpin') : t('common.pin')"
+            :aria-label="note.isPinned ? t('common.unpin') : t('common.pin')"
             :aria-pressed="note.isPinned"
             :disabled="isDeleted"
             @click="emit('togglePin')"
@@ -216,8 +219,8 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           </button>
           <button
             class="icon-button"
-            :title="isDeleted ? 'Restore' : 'Delete'"
-            :aria-label="isDeleted ? 'Restore' : 'Delete'"
+            :title="isDeleted ? t('common.restore') : t('common.delete')"
+            :aria-label="isDeleted ? t('common.restore') : t('common.delete')"
             @click="emit('toggleDeleted')"
           >
             <svg v-if="isDeleted" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -238,15 +241,15 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           #{{ name }}
           <button
             class="tag-remove"
-            title="Remove tag"
-            :aria-label="`Remove tag ${name}`"
+            :title="t('editor.removeTag')"
+            :aria-label="t('editor.removeTagLabel', { name })"
             @click="emit('removeTag', name)"
           >
             &times;
           </button>
         </span>
-        <button class="add-tag-button" title="Add Tag" @click="emit('addTag')">
-          + Tag
+        <button class="add-tag-button" :title="t('editor.addTag')" @click="emit('addTag')">
+          {{ t('editor.addTagButton') }}
         </button>
       </div>
 
@@ -260,7 +263,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
         <rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" stroke-width="2" />
         <path d="M15 16h18M15 23h18M15 30h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
       </svg>
-      <p>No Note Selected</p>
+      <p>{{ t('editor.emptyState') }}</p>
     </div>
   </main>
 </template>

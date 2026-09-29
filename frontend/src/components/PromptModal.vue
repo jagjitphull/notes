@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 const props = defineProps<{
   title: string;
@@ -8,6 +9,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ confirm: [value: string]; cancel: [] }>();
+
+const { t } = useI18n();
 
 const value = ref(props.initialValue ?? "");
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -68,9 +71,9 @@ function submit() {
         <h2 :id="titleId">{{ title }}</h2>
         <input ref="inputRef" v-model="value" type="text" @keydown.esc="emit('cancel')" />
         <div class="modal-actions">
-          <button type="button" class="secondary" @click="emit('cancel')">Cancel</button>
+          <button type="button" class="secondary" @click="emit('cancel')">{{ t('common.cancel') }}</button>
           <button type="submit" class="primary" :disabled="!value.trim()">
-            {{ confirmLabel ?? "OK" }}
+            {{ confirmLabel ?? t('common.ok') }}
           </button>
         </div>
       </form>

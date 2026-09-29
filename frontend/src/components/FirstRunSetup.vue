@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { detectCloudFolders, setNotesRoot, type CloudFolderSuggestion } from "../api";
 
 const emit = defineEmits<{ ready: [] }>();
+
+const { t } = useI18n();
 
 const suggestions = ref<CloudFolderSuggestion[]>([]);
 const busy = ref(false);
@@ -43,11 +46,9 @@ async function useDefaultLocal() {
 <template>
   <div class="setup-screen">
     <div class="setup-card">
-      <h1>Where should your notes live?</h1>
+      <h1>{{ t('firstRun.heading') }}</h1>
       <p class="subtitle">
-        Notes are saved as plain Markdown files in a folder you choose. Pick a
-        folder inside Dropbox, pCloud, or any synced drive to have your notes
-        follow you across Mac and Linux — or keep it local.
+        {{ t('firstRun.subtitle') }}
       </p>
 
       <div v-if="suggestions.length" class="suggestions">
@@ -65,10 +66,10 @@ async function useDefaultLocal() {
 
       <div class="actions">
         <button class="primary" :disabled="busy" @click="pickFolder">
-          Choose a Folder…
+          {{ t('firstRun.chooseFolder') }}
         </button>
         <button class="secondary" :disabled="busy" @click="useDefaultLocal">
-          Use Documents/Notes (local only)
+          {{ t('firstRun.useDefault') }}
         </button>
       </div>
 

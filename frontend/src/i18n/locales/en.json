@@ -1,0 +1,95 @@
+{
+  "common": {
+    "delete": "Delete",
+    "restore": "Restore",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "cancel": "Cancel",
+    "ok": "OK",
+    "create": "Create",
+    "rename": "Rename",
+    "add": "Add",
+    "newNote": "New Note",
+    "newFolder": "New Folder",
+    "allNotes": "All Notes",
+    "recentlyDeleted": "Recently Deleted",
+    "notes": "Notes",
+    "tag": "Tag"
+  },
+  "topBar": {
+    "toggleSidebar": "Toggle Sidebar",
+    "toggleNoteList": "Toggle Note List",
+    "installUpdate": "Install v{version} and restart",
+    "installing": "Installing…",
+    "updateTo": "Update to v{version}"
+  },
+  "resize": {
+    "sidebar": "Resize sidebar",
+    "noteList": "Resize note list"
+  },
+  "sidebar": {
+    "navLabel": "Folders and tags",
+    "searchPlaceholder": "Search",
+    "searchLabel": "Search notes",
+    "smartSearchTitle": "Smart Search: semantic search over note meaning, via a local Ollama model",
+    "smartSearchToggle": "Toggle Smart Search",
+    "folders": "Folders",
+    "tags": "Tags",
+    "appearanceTitle": "Appearance: {label} (click to change)",
+    "appearanceLabel": "Appearance: {label}. Click to change.",
+    "theme": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    }
+  },
+  "noteList": {
+    "sectionLabel": "Notes list",
+    "trashNotice": "Notes are deleted permanently from here after 30 days.",
+    "empty": "No Notes",
+    "pinned": "Pinned",
+    "smartSearchPrefix": "Smart Search: "
+  },
+  "editor": {
+    "placeholder": "New Note",
+    "contentLabel": "Note content",
+    "emptyState": "No Note Selected",
+    "removeTag": "Remove tag",
+    "removeTagLabel": "Remove tag {name}",
+    "addTag": "Add Tag",
+    "addTagButton": "+ Tag",
+    "toolbar": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "strikethrough": "Strikethrough",
+      "highlight": "Highlight",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "checklist": "Checklist",
+      "bulletList": "Bullet List",
+      "numberedList": "Numbered List",
+      "codeBlock": "Code Block",
+      "quote": "Quote"
+    }
+  },
+  "contextMenu": {
+    "deletePermanently": "Delete Permanently",
+    "confirmDeletePermanent": "Permanently delete \"{title}\"? This can't be undone.",
+    "moveTo": "Move to “{folder}”",
+    "newSubfolder": "New Subfolder…",
+    "renameEllipsis": "Rename…",
+    "cantDeleteFolder": "Can't delete \"{name}\": {error}"
+  },
+  "promptModal": {
+    "addTagTitle": "Add Tag",
+    "newFolderTitle": "New Folder",
+    "renameFolderTitle": "Rename Folder"
+  },
+  "firstRun": {
+    "heading": "Where should your notes live?",
+    "subtitle": "Notes are saved as plain Markdown files in a folder you choose. Pick a folder inside Dropbox, pCloud, or any synced drive to have your notes follow you across Mac and Linux — or keep it local.",
+    "chooseFolder": "Choose a Folder…",
+    "useDefault": "Use Documents/Notes (local only)"
+  }
+}

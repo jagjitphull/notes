@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
@@ -31,6 +32,8 @@ import {
 import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import type { Folder, Note, Tag } from "./types";
+
+const { t } = useI18n();
 
 const {
   sidebarCollapsed,
@@ -220,16 +223,16 @@ const filteredNotes = computed(() => {
 
 const listTitle = computed(() => {
   if (isSearching.value) {
-    const prefix = smartSearchEnabled.value ? "Smart Search: " : "";
+    const prefix = smartSearchEnabled.value ? t("noteList.smartSearchPrefix") : "";
     return `${prefix}"${searchQuery.value.trim()}"`;
   }
-  if (selectedId.value === "all") return "All Notes";
-  if (selectedId.value === "recently-deleted") return "Recently Deleted";
+  if (selectedId.value === "all") return t("common.allNotes");
+  if (selectedId.value === "recently-deleted") return t("common.recentlyDeleted");
   if (selectedId.value.startsWith("tag:")) {
     const tagId = selectedId.value.slice(4);
-    return tags.value.find((t) => t.id === tagId)?.name ?? "Tag";
+    return tags.value.find((tag) => tag.id === tagId)?.name ?? t("common.tag");
   }
-  return folders.value.find((f) => f.id === selectedId.value)?.name ?? "Notes";
+  return folders.value.find((f) => f.id === selectedId.value)?.name ?? t("common.notes");
 });
 
 const selectedNote = computed(
@@ -304,9 +307,9 @@ function onAddTag() {
   if (!selectedNote.value) return;
   const noteId = selectedNote.value.id;
   promptModal.value = {
-    title: "Add Tag",
+    title: t("promptModal.addTagTitle"),
     initialValue: "",
-    confirmLabel: "Add",
+    confirmLabel: t("common.add"),
     onConfirm: async (name) => {
       await addNoteTag(noteId, name);
       await refreshData();
@@ -329,19 +332,20 @@ function onNoteContextMenu(event: MouseEvent, note: Note) {
   const items: ContextMenuItem[] = [];
 
   if (note.deletedAt) {
-    items.push({ label: "Restore", action: () => setNoteDeleted(note.id, false).then(refreshData) });
+    items.push({ label: t("common.restore"), action: () => setNoteDeleted(note.id, false).then(refreshData) });
     items.push({
-      label: "Delete Permanently",
+      label: t("contextMenu.deletePermanently"),
       danger: true,
       action: () => {
-        if (confirm(`Permanently delete "${note.title || "New Note"}"? This can't be undone.`)) {
+        const title = note.title || t("common.newNote");
+        if (confirm(t("contextMenu.confirmDeletePermanent", { title }))) {
           deleteNotePermanently(note.id).then(refreshData);
         }
       },
     });
   } else {
     items.push({
-      label: note.isPinned ? "Unpin" : "Pin",
+      label: note.isPinned ? t("common.unpin") : t("common.pin"),
       action: () => setNotePinned(note.id, !note.isPinned).then(refreshData),
     });
 
@@ -350,7 +354,7 @@ function onNoteContextMenu(event: MouseEvent, note: Note) {
       items.push({ label: "", action: () => {}, separator: true });
       for (const folder of otherFolders) {
         items.push({
-          label: `Move to “${folder.name}”`,
+          label: t("contextMenu.moveTo", { folder: folder.name }),
           action: () => moveNote(note.id, folder.id).then(refreshData),
         });
       }
@@ -358,7 +362,7 @@ function onNoteContextMenu(event: MouseEvent, note: Note) {
 
     items.push({ label: "", action: () => {}, separator: true });
     items.push({
-      label: "Delete",
+      label: t("common.delete"),
       danger: true,
       action: () => setNoteDeleted(note.id, true).then(refreshData),
     });
@@ -371,16 +375,16 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
   const isRoot = folder.id === "";
   const items: ContextMenuItem[] = [
     {
-      label: "New Subfolder…",
+      label: t("contextMenu.newSubfolder"),
       action: () => promptNewFolder(folder.id),
     },
     {
-      label: "Rename…",
+      label: t("contextMenu.renameEllipsis"),
       disabled: isRoot,
       action: () => promptRenameFolder(folder),
     },
     {
-      label: "Delete",
+      label: t("common.delete"),
       danger: true,
       disabled: isRoot,
       action: async () => {
@@ -389,7 +393,7 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
           if (selectedId.value === folder.id) selectedId.value = "all";
           await refreshData();
         } catch (e) {
-          alert(`Can't delete "${folder.name}": ${e}`);
+          alert(t("contextMenu.cantDeleteFolder", { name: folder.name, error: String(e) }));
         }
       },
     },
@@ -399,9 +403,9 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
 
 function promptNewFolder(parentId: string) {
   promptModal.value = {
-    title: "New Folder",
+    title: t("promptModal.newFolderTitle"),
     initialValue: "",
-    confirmLabel: "Create",
+    confirmLabel: t("common.create"),
     onConfirm: async (name) => {
       const id = await createFolder(parentId, name);
       await refreshData();
@@ -413,9 +417,9 @@ function promptNewFolder(parentId: string) {
 
 function promptRenameFolder(folder: Folder) {
   promptModal.value = {
-    title: "Rename Folder",
+    title: t("promptModal.renameFolderTitle"),
     initialValue: folder.name,
-    confirmLabel: "Rename",
+    confirmLabel: t("common.rename"),
     onConfirm: async (name) => {
       const newId = await renameFolder(folder.id, name);
       if (selectedId.value === folder.id) selectedId.value = newId;
@@ -484,8 +488,8 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       <button
         class="pane-toggle"
         :class="{ active: !sidebarCollapsed }"
-        title="Toggle Sidebar"
-        aria-label="Toggle Sidebar"
+        :title="t('topBar.toggleSidebar')"
+        :aria-label="t('topBar.toggleSidebar')"
         :aria-pressed="!sidebarCollapsed"
         @click="sidebarCollapsed = !sidebarCollapsed"
       >
@@ -497,8 +501,8 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       <button
         class="pane-toggle"
         :class="{ active: !listCollapsed }"
-        title="Toggle Note List"
-        aria-label="Toggle Note List"
+        :title="t('topBar.toggleNoteList')"
+        :aria-label="t('topBar.toggleNoteList')"
         :aria-pressed="!listCollapsed"
         @click="listCollapsed = !listCollapsed"
       >
@@ -514,14 +518,14 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-if="updateAvailable"
         class="update-available"
         :disabled="updateInstalling"
-        :title="`Install v${updateVersion} and restart`"
+        :title="t('topBar.installUpdate', { version: updateVersion })"
         @click="installUpdate"
       >
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
           <path d="M10 3v10M6 9.5 10 13.5 14 9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
           <path d="M4 16.5h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
         </svg>
-        <span>{{ updateInstalling ? "Installing…" : `Update to v${updateVersion}` }}</span>
+        <span>{{ updateInstalling ? t('topBar.installing') : t('topBar.updateTo', { version: updateVersion }) }}</span>
       </button>
     </div>
 
@@ -548,7 +552,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         style="grid-column: 2"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize sidebar"
+        :aria-label="t('resize.sidebar')"
         :aria-valuenow="sidebarWidth"
         :aria-valuemin="paneBounds.sidebar.min"
         :aria-valuemax="paneBounds.sidebar.max"
@@ -576,7 +580,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         style="grid-column: 4"
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize note list"
+        :aria-label="t('resize.noteList')"
         :aria-valuenow="listWidth"
         :aria-valuemin="paneBounds.list.min"
         :aria-valuemax="paneBounds.list.max"

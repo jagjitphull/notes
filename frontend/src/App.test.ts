@@ -31,6 +31,7 @@ vi.mock("./api", () => apiMocks);
 
 const App = (await import("./App.vue")).default;
 const Sidebar = (await import("./components/Sidebar.vue")).default;
+const { i18n } = await import("./i18n");
 
 // Regression coverage for a real bug found in manual testing: Smart
 // Search's availability was only ever checked once at launch, so once
@@ -58,6 +59,7 @@ describe("App.vue Smart Search", () => {
   async function mountReady() {
     const wrapper = mount(App, {
       global: {
+        plugins: [i18n],
         stubs: {
           Editor: true,
           NoteList: true,

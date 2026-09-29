@@ -28,10 +28,18 @@ import {
   smartSearch,
   smartSearchAvailable,
 } from "./api";
+import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import type { Folder, Note, Tag } from "./types";
 
 const { sidebarCollapsed, listCollapsed, gridTemplateColumns, startResize } = usePaneLayout();
+const {
+  available: updateAvailable,
+  version: updateVersion,
+  installing: updateInstalling,
+  checkForUpdate,
+  installUpdate,
+} = useAppUpdater();
 
 const loading = ref(true);
 const notesRoot = ref<string | null>(null);
@@ -95,6 +103,11 @@ onMounted(async () => {
   // poll periodically to pick up either transition without needing a
   // failed search or an app restart to notice.
   smartSearchAvailabilityTimer = setInterval(refreshSmartSearchAvailability, 15000);
+
+  // Fire-and-forget: a slow/offline update check shouldn't hold up
+  // startup, and a failure here is silent (see useAppUpdater) since
+  // checking for updates is a nice-to-have, not a launch requirement.
+  checkForUpdate();
 });
 
 onUnmounted(() => {
@@ -477,6 +490,20 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
           <line x1="6.5" y1="12.5" x2="11" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
         </svg>
       </button>
+
+      <button
+        v-if="updateAvailable"
+        class="update-available"
+        :disabled="updateInstalling"
+        :title="`Install v${updateVersion} and restart`"
+        @click="installUpdate"
+      >
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M10 3v10M6 9.5 10 13.5 14 9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M4 16.5h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <span>{{ updateInstalling ? "Installing…" : `Update to v${updateVersion}` }}</span>
+      </button>
     </div>
 
     <div class="app-shell" :style="{ gridTemplateColumns }">
@@ -589,6 +616,35 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 .pane-toggle:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.update-available {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 10px 5px 8px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, 0.15);
+  color: var(--accent-blue);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-available svg {
+  width: 14px;
+  height: 14px;
+}
+
+.update-available:hover:not(:disabled) {
+  background: rgba(10, 132, 255, 0.25);
+}
+
+.update-available:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .pane-toggle.active {

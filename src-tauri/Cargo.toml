@@ -33,3 +33,5 @@ notify-debouncer-mini = "0.4"
 tauri-plugin-dialog = "2"
 ureq = { version = "2", default-features = false, features = ["json"] }
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

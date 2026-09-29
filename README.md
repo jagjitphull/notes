@@ -131,6 +131,45 @@ too, since between the native `.deb` and the portable AppImage there wasn't
 a gap it would fill for this app's target platform — worth adding later if
 cross-distro store distribution becomes a goal.
 
+## Releasing (CI-built, signed, auto-updating)
+
+Pushing a version tag builds, signs, and publishes both installers via
+`.github/workflows/release.yml`:
+
+```
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+This creates a **draft** GitHub Release with the `.deb`, the `.AppImage`,
+and their signatures attached — review it and hit "Publish" when ready;
+nothing goes live automatically. Once published, the app's built-in
+updater (checks on launch, and a small "Update to vX.Y.Z" pill appears in
+the top bar when one's found) picks it up automatically for anyone
+already running an earlier version — no separate store or update server
+needed, it just reads `.../releases/latest/download/latest.json`, which
+`tauri-action` generates and attaches for you.
+
+**One-time setup before the first release**: the release workflow signs
+every build with a private key so the updater can verify it's really
+this project publishing the update, not something injected in transit.
+That key needs to exist as two repository secrets
+(Settings → Secrets and variables → Actions):
+
+- `TAURI_SIGNING_PRIVATE_KEY` — the private key
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — its password
+
+The matching public key is already committed in
+`src-tauri/tauri.conf.json` (`plugins.updater.pubkey`) — that half is
+meant to be public, it's what lets the app verify updates, not what
+protects anything. If you ever need to rotate the keypair (private key
+compromised, lost, whatever), generate a fresh one with
+`npx tauri signer generate -w <path>`, update both the pubkey in
+`tauri.conf.json` and the two secrets, and every previously-installed
+copy of the app will need to update **once** the old-fashioned way
+(re-download) since it can no longer verify updates signed by a key it
+doesn't know about.
+
 ## Status
 
 - **Phase 1** (scaffolding): done — build system, SQLite schema.
@@ -173,6 +212,14 @@ cross-distro store distribution becomes a goal.
   second process — matters here specifically because two processes would
   otherwise both open the same SQLite index and watch the same notes
   folder, racing each other).
+- **Distribution**: CI (GitHub Actions) runs the full test suite —
+  backend (`cargo fmt`, `clippy -D warnings`, `cargo test`) and frontend
+  (`vue-tsc` + `vite build`, a Vitest suite covering the API bindings,
+  both layout/theme composables, and the Smart Search toggle's
+  availability/fallback behavior) — on every push and PR. Pushing a
+  version tag builds, signs, and publishes signed `.deb`/`.AppImage`
+  releases, which the app's built-in updater then picks up automatically
+  for existing installs; see "Releasing" above.
 
 ## License
 

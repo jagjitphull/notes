@@ -7,3 +7,10 @@ node_modules
 *.sqlite3-shm
 
 .DS_Store
+
+# Updater signing keys must never be committed - the private half lives
+# only in the TAURI_SIGNING_PRIVATE_KEY* GitHub secrets (see README's
+# "Releasing" section). This is a safety net, not the actual boundary:
+# the key is generated outside the repo and was never in it.
+*.key
+*.key.pub

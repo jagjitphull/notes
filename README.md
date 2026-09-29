@@ -44,8 +44,11 @@ src-tauri/    Rust backend
 
 ## Development
 
-Requires Node.js, Rust, and (on Linux) the WebKitGTK/GTK3 dev packages that
-Tauri needs to build:
+Requires **Node.js 22 or 24 (LTS)** — an `.nvmrc` is checked in, so
+`nvm use` picks the right one; some dependencies (jsdom, Vitest) warn or
+misbehave on odd-numbered "Current" releases like Node 23/25, which
+aren't meant for long-term use. Also requires Rust, and (on Linux) the
+WebKitGTK/GTK3 dev packages that Tauri needs to build:
 
 ```
 sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev \

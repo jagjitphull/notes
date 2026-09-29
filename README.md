@@ -129,10 +129,30 @@ ships webkit2gtk 4.0, not 4.1, so `apt install` would fail to resolve them
 there. The AppImage bundles its own webkit2gtk and works on either.
 
 RPM isn't built here since `rpmbuild` isn't part of this toolchain and
-isn't relevant on a Debian-based distro like Pop!_OS; Flatpak was left out
-too, since between the native `.deb` and the portable AppImage there wasn't
-a gap it would fill for this app's target platform — worth adding later if
-cross-distro store distribution becomes a goal.
+isn't relevant on a Debian-based distro like Pop!_OS.
+
+### Flatpak, Snap, AUR
+
+Manifests for wider cross-distro distribution live alongside the app rather
+than in `src-tauri/target/`, since none of them are generated output:
+
+- **`flatpak/dev.jagjitphull.notes.yml`** — packages the same release binary
+  the `.deb`/AppImage targets use. See `flatpak/README.md` for the one
+  build-time gap that needs addressing first (the system tray icon's
+  `libayatana-appindicator3` dependency, which `org.gnome.Platform` doesn't
+  ship).
+- **`snap/snapcraft.yaml`** — same approach, via the `gnome` extension for
+  the webview/GTK stack.
+- **`packaging/aur/PKGBUILD`** — a `-git` VCS package (no tagged release
+  exists yet to pin a source-tarball checksum against) that builds from
+  source, per AUR convention.
+
+None of these have been build-tested here: `flatpak-builder`, `snapcraft`,
+and `makepkg` aren't available in this environment. The manifests follow
+each format's standard conventions and their YAML/PKGBUILD syntax has been
+validated, but an actual `flatpak-builder`/`snapcraft`/`makepkg` run (and,
+for the AUR package, an upload + install by someone with an Arch machine)
+is still needed before treating any of them as verified.
 
 ## Releasing (CI-built, signed, auto-updating)
 

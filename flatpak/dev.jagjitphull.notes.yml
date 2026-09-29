@@ -1,0 +1,51 @@
+app-id: dev.jagjitphull.notes
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+command: notes
+finish-args:
+  # GUI (X11 fallback + native Wayland) and GPU access for the webview.
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Smart Search talks to a local Ollama server, and the updater checks
+  # GitHub Releases - both are plain outbound HTTP(S), not IPC, so the
+  # portal's own network mediation doesn't apply here.
+  - --share=network
+  # The notes root is a user-chosen folder that's very often a cloud-sync
+  # directory (Dropbox, pCloud, ...) rather than anything XDG-portal-aware,
+  # so this needs broad home access rather than a specific --filesystem=.
+  - --filesystem=home
+modules:
+  # The app creates a real system tray icon at runtime (see
+  # src-tauri/src/lib.rs) via libayatana-appindicator3, which the .deb
+  # build links as a hard dependency - org.gnome.Platform doesn't ship
+  # it, so the binary won't start without a module providing it here.
+  # See flatpak/README.md for how to add one before building.
+  - name: notes
+    buildsystem: simple
+    # Building the Rust/Node project from source inside the Flatpak
+    # sandbox would need every Cargo dependency vendored ahead of time
+    # (flatpak-builder disallows network access mid-build); instead this
+    # packages the same release binary `cargo tauri build` already
+    # produces for the .deb/AppImage targets, built as a prior CI step.
+    build-commands:
+      - install -Dm755 notes /app/bin/notes
+      - install -Dm644 dev.jagjitphull.notes.desktop /app/share/applications/dev.jagjitphull.notes.desktop
+      - install -Dm644 dev.jagjitphull.notes.metainfo.xml /app/share/metainfo/dev.jagjitphull.notes.metainfo.xml
+      - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/dev.jagjitphull.notes.png
+      - install -Dm644 icon-256.png /app/share/icons/hicolor/256x256/apps/dev.jagjitphull.notes.png
+    sources:
+      - type: file
+        path: ../src-tauri/target/release/notes
+      - type: file
+        path: ../packaging/linux/dev.jagjitphull.notes.desktop
+      - type: file
+        path: ../packaging/linux/dev.jagjitphull.notes.metainfo.xml
+      - type: file
+        path: ../src-tauri/icons/128x128.png
+        dest-filename: icon-128.png
+      - type: file
+        path: ../src-tauri/icons/128x128@2x.png
+        dest-filename: icon-256.png

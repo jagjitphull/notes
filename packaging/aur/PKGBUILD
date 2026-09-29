@@ -1,0 +1,45 @@
+# Maintainer: jagjitphull
+# VCS package: no tagged release exists yet to pin a source-tarball
+# checksum against, so this builds from the repo's default branch, per
+# AUR's normal convention for -git packages. Once releases/tags exist,
+# a plain `notes` package built from a release tarball (with real
+# sha256sums, not SKIP) should replace this as the primary AUR package.
+pkgname=notes-git
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc="A minimalist, local-first notes app"
+arch=('x86_64')
+url="https://github.com/jagjitphull/notes"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
+makedepends=('rust' 'cargo' 'nodejs' 'npm' 'git')
+provides=('notes')
+conflicts=('notes')
+source=("$pkgname::git+https://github.com/jagjitphull/notes.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  git describe --long --tags 2>/dev/null | sed 's/^v//;s/([^-]*-g)/r\1/;s/-/./g' \
+    || printf "0.1.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd "$pkgname"
+  npm install --prefix frontend
+  npm run build --prefix frontend
+  cd src-tauri
+  cargo build --release --locked
+}
+
+package() {
+  cd "$pkgname/src-tauri"
+  install -Dm755 target/release/notes "$pkgdir/usr/bin/notes"
+  install -Dm644 ../packaging/linux/dev.jagjitphull.notes.desktop \
+    "$pkgdir/usr/share/applications/dev.jagjitphull.notes.desktop"
+  install -Dm644 icons/128x128.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/dev.jagjitphull.notes.png"
+  install -Dm644 icons/128x128@2x.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/dev.jagjitphull.notes.png"
+  install -Dm644 ../LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

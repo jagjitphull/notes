@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
@@ -67,7 +68,13 @@ const editor = useEditor({
     TaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: t("editor.placeholder") }),
-    Image,
+    // Pasted/dropped images are inserted as data: URIs (see handlePaste/
+    // handleDrop below) - @tiptap/extension-image defaults to rejecting
+    // those specifically (allowBase64: false), which doesn't break the
+    // insert itself but silently drops the image the next time the note
+    // is re-parsed from its saved markdown (reopening it, or even just
+    // switching to another note and back).
+    Image.configure({ allowBase64: true }),
     Highlight,
     Markdown.configure({
       html: false,
@@ -107,11 +114,86 @@ const editor = useEditor({
       }
       return true;
     },
+    // A screenshot tool copies image bytes straight to the clipboard
+    // (no file to drag), so pasting needs its own handler - handleDrop
+    // above only ever sees files from a real drag-and-drop.
+    handlePaste(view, event) {
+      // .files first, matching handleDrop above - some WebKit builds
+      // don't populate DataTransferItem.kind/getAsFile() reliably for a
+      // clipboard image, but do populate .files.
+      let files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
+        f.type.startsWith("image/"),
+      );
+      if (files.length === 0) {
+        files = Array.from(event.clipboardData?.items ?? [])
+          .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+          .map((item) => item.getAsFile())
+          .filter((f): f is File => f !== null);
+      }
+      if (files.length === 0) return false;
+      event.preventDefault();
+
+      const pos = view.state.selection.from;
+      for (const file of files) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const node = view.state.schema.nodes.image.create({ src: reader.result });
+          const tr = view.state.tr.insert(pos, node);
+          view.dispatch(tr);
+        };
+        reader.readAsDataURL(file);
+      }
+      return true;
+    },
   },
   onUpdate({ editor }) {
     body.value = editor.storage.markdown.getMarkdown();
+    convertBlobImages(editor);
   },
 });
+
+// Safety net for pasted images: on at least one WebKitGTK build, a
+// pasted (not dragged) image doesn't reach handlePaste's clipboardData
+// at all - something upstream of it inserts an <img src="blob:...">
+// directly via the platform's own default paste handling. A blob: URL
+// only resolves for this page session, so it silently breaks (shows a
+// broken image) the next time the note is opened. This normalizes any
+// such image, however it got inserted, into a persistent data: URL.
+const blobConversionsInFlight = new Set<string>();
+
+function convertBlobImages(editor: Editor) {
+  editor.state.doc.descendants((node) => {
+    const src = node.attrs.src as string | undefined;
+    if (node.type.name !== "image" || !src?.startsWith("blob:")) return;
+    if (blobConversionsInFlight.has(src)) return;
+    blobConversionsInFlight.add(src);
+
+    fetch(src)
+      .then((res) => res.blob())
+      .then(
+        (blob) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          }),
+      )
+      .then((dataUrl) => {
+        if (editor.isDestroyed) return;
+        editor.state.doc.descendants((n, pos) => {
+          if (n.type.name === "image" && n.attrs.src === src) {
+            editor.view.dispatch(editor.view.state.tr.setNodeAttribute(pos, "src", dataUrl));
+            return false;
+          }
+        });
+      })
+      .catch(() => {
+        // Best-effort: if the blob URL is already gone, there's nothing
+        // left to recover it from.
+      });
+  });
+}
 
 // Sync content into the editor whenever `body` diverges from what the
 // editor itself last produced — i.e. it changed for an external reason

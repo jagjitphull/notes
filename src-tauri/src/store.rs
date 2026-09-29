@@ -194,6 +194,16 @@ pub fn upsert_note_file(
 }
 
 fn sync_tags(conn: &Connection, note_id: &str, tag_names: &[String]) -> StoreResult<()> {
+    let previously_linked: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT tag_id FROM note_tags WHERE note_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([note_id], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+    };
+
     conn.execute("DELETE FROM note_tags WHERE note_id = ?1", [note_id])
         .map_err(|e| e.to_string())?;
     for name in tag_names {
@@ -204,6 +214,24 @@ fn sync_tags(conn: &Connection, note_id: &str, tag_names: &[String]) -> StoreRes
         )
         .map_err(|e| e.to_string())?;
     }
+
+    // A tag no longer referenced by any note (this one just dropped its
+    // last reference to it) is dead weight — remove it rather than let
+    // unused tags accumulate forever.
+    for tag_id in previously_linked {
+        let still_used: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM note_tags WHERE tag_id = ?1)",
+                [&tag_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !still_used {
+            conn.execute("DELETE FROM tags WHERE id = ?1", [&tag_id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
     Ok(())
 }
 
@@ -366,6 +394,34 @@ pub fn set_deleted(
 ) -> StoreResult<()> {
     mutate_front_matter(conn, notes_root, note_id, |fm| {
         fm.deleted_at = if deleted { Some(now_rfc3339()) } else { None };
+    })
+}
+
+pub fn add_tag_to_note(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    tag_name: &str,
+) -> StoreResult<()> {
+    let tag_name = tag_name.trim().to_string();
+    if tag_name.is_empty() {
+        return Err("tag name can't be empty".to_string());
+    }
+    mutate_front_matter(conn, notes_root, note_id, |fm| {
+        if !fm.tags.iter().any(|t| t.eq_ignore_ascii_case(&tag_name)) {
+            fm.tags.push(tag_name);
+        }
+    })
+}
+
+pub fn remove_tag_from_note(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    tag_name: &str,
+) -> StoreResult<()> {
+    mutate_front_matter(conn, notes_root, note_id, |fm| {
+        fm.tags.retain(|t| !t.eq_ignore_ascii_case(tag_name));
     })
 }
 
@@ -690,6 +746,65 @@ mod tests {
 
         let raw = fs::read_to_string(notes_root.join("External.md")).unwrap();
         assert!(raw.starts_with("---\n"));
+    }
+
+    #[test]
+    fn add_and_remove_note_tags() {
+        let app_dir = temp_dir("app8");
+        let notes_root = temp_dir("root8");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "").unwrap();
+        add_tag_to_note(&conn, &notes_root, &id, "Work").unwrap();
+        add_tag_to_note(&conn, &notes_root, &id, "urgent").unwrap();
+        // Case-insensitive de-dup: adding "work" again should be a no-op.
+        add_tag_to_note(&conn, &notes_root, &id, "work").unwrap();
+
+        let tag_names: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM tags t
+                     JOIN note_tags nt ON nt.tag_id = t.id
+                     WHERE nt.note_id = ?1 ORDER BY t.name",
+                )
+                .unwrap();
+            stmt.query_map([&id], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        assert_eq!(tag_names, vec!["Work".to_string(), "urgent".to_string()]);
+
+        remove_tag_from_note(&conn, &notes_root, &id, "Work").unwrap();
+        let tag_names_after: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM tags t
+                     JOIN note_tags nt ON nt.tag_id = t.id
+                     WHERE nt.note_id = ?1",
+                )
+                .unwrap();
+            stmt.query_map([&id], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        assert_eq!(tag_names_after, vec!["urgent".to_string()]);
+
+        // Removing a tag's last reference should garbage-collect the tag
+        // row itself, not just the note_tags link (regression: it used to
+        // linger forever and still show up as a filter with no notes in it).
+        let work_tag_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tags WHERE name = 'Work')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!work_tag_exists, "orphaned tag should have been garbage-collected");
+
+        let urgent_tag_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tags WHERE name = 'urgent')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(urgent_tag_exists, "still-used tag should not be removed");
     }
 
     #[test]

@@ -238,8 +238,18 @@ pub struct TagDto {
 #[tauri::command]
 pub fn list_tags(db_state: State<DbState>) -> Result<Vec<TagDto>, String> {
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    // Only tags currently applied to at least one non-deleted note — a tag
+    // that only exists on a note in Recently Deleted (or that's had its
+    // last reference removed) shouldn't linger in the sidebar as a dead end.
     let mut stmt = conn
-        .prepare("SELECT id, name FROM tags ORDER BY name")
+        .prepare(
+            "SELECT DISTINCT t.id, t.name
+             FROM tags t
+             JOIN note_tags nt ON nt.tag_id = t.id
+             JOIN notes n ON n.id = nt.note_id
+             WHERE n.deleted_at IS NULL
+             ORDER BY t.name",
+        )
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| {
@@ -300,6 +310,30 @@ pub fn set_note_pinned(
     let notes_root = require_notes_root(&root_state)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     store::set_pinned(&conn, &notes_root, &id, pinned)
+}
+
+#[tauri::command]
+pub fn add_note_tag(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+    tag_name: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::add_tag_to_note(&conn, &notes_root, &id, &tag_name)
+}
+
+#[tauri::command]
+pub fn remove_note_tag(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+    tag_name: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::remove_tag_from_note(&conn, &notes_root, &id, &tag_name)
 }
 
 #[tauri::command]

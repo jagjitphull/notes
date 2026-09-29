@@ -50,6 +50,14 @@ export function setNotePinned(id: string, pinned: boolean): Promise<void> {
   return invoke("set_note_pinned", { id, pinned });
 }
 
+export function addNoteTag(id: string, tagName: string): Promise<void> {
+  return invoke("add_note_tag", { id, tagName });
+}
+
+export function removeNoteTag(id: string, tagName: string): Promise<void> {
+  return invoke("remove_note_tag", { id, tagName });
+}
+
 export function setNoteDeleted(id: string, deleted: boolean): Promise<void> {
   return invoke("set_note_deleted", { id, deleted });
 }

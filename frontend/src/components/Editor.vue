@@ -9,7 +9,7 @@ import Image from "@tiptap/extension-image";
 import HighlightBase from "@tiptap/extension-highlight";
 import { Markdown } from "tiptap-markdown";
 import markdownItMark from "markdown-it-mark";
-import type { Folder, Note } from "../types";
+import type { Folder, Note, Tag } from "../types";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
 // (same syntax Obsidian and others use), since tiptap-markdown has no
@@ -32,12 +32,23 @@ const Highlight = HighlightBase.extend({
 const props = defineProps<{
   note: Note | null;
   folders: Folder[];
+  tags: Tag[];
 }>();
 
 const emit = defineEmits<{
   togglePin: [];
   toggleDeleted: [];
+  addTag: [];
+  removeTag: [name: string];
 }>();
+
+const noteTagNames = computed(
+  () =>
+    props.tags
+      .filter((t) => props.note?.tagIds.includes(t.id))
+      .map((t) => t.name)
+      .sort(),
+);
 
 const body = defineModel<string>("body", { default: "" });
 
@@ -211,6 +222,24 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           </button>
         </div>
       </div>
+
+      <div v-if="!isDeleted" class="tags-row">
+        <span v-for="name in noteTagNames" :key="name" class="tag-chip">
+          #{{ name }}
+          <button
+            class="tag-remove"
+            title="Remove tag"
+            :aria-label="`Remove tag ${name}`"
+            @click="emit('removeTag', name)"
+          >
+            &times;
+          </button>
+        </span>
+        <button class="add-tag-button" title="Add Tag" @click="emit('addTag')">
+          + Tag
+        </button>
+      </div>
+
       <div class="editor-canvas">
         <EditorContent :editor="editor" class="editor-content" />
       </div>
@@ -291,6 +320,65 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   color: var(--text-secondary);
   white-space: nowrap;
   margin-right: 4px;
+}
+
+.tags-row {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 48px 0;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 12px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-remove:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.add-tag-button {
+  padding: 3px 9px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.add-tag-button:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
 }
 
 .editor-canvas {

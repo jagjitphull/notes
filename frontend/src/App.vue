@@ -8,6 +8,7 @@ import FirstRunSetup from "./components/FirstRunSetup.vue";
 import ContextMenu, { type ContextMenuItem } from "./components/ContextMenu.vue";
 import PromptModal from "./components/PromptModal.vue";
 import {
+  addNoteTag,
   createFolder,
   createNote,
   deleteFolder,
@@ -18,6 +19,7 @@ import {
   listNotes,
   listTags,
   moveNote,
+  removeNoteTag,
   renameFolder,
   saveNoteBody,
   searchNotes,
@@ -228,6 +230,27 @@ async function onTogglePin() {
 async function onToggleDeleted() {
   if (!selectedNote.value) return;
   await setNoteDeleted(selectedNote.value.id, !selectedNote.value.deletedAt);
+  await refreshData();
+}
+
+function onAddTag() {
+  if (!selectedNote.value) return;
+  const noteId = selectedNote.value.id;
+  promptModal.value = {
+    title: "Add Tag",
+    initialValue: "",
+    confirmLabel: "Add",
+    onConfirm: async (name) => {
+      await addNoteTag(noteId, name);
+      await refreshData();
+      promptModal.value = null;
+    },
+  };
+}
+
+async function onRemoveTag(name: string) {
+  if (!selectedNote.value) return;
+  await removeNoteTag(selectedNote.value.id, name);
   await refreshData();
 }
 
@@ -458,8 +481,11 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         style="grid-column: 5"
         :note="selectedNote"
         :folders="folders"
+        :tags="tags"
         @toggle-pin="onTogglePin"
         @toggle-deleted="onToggleDeleted"
+        @add-tag="onAddTag"
+        @remove-tag="onRemoveTag"
       />
     </div>
 

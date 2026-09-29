@@ -112,6 +112,8 @@ pub fn run() {
             commands::save_note_body,
             commands::create_note,
             commands::set_note_pinned,
+            commands::add_note_tag,
+            commands::remove_note_tag,
             commands::set_note_deleted,
             commands::delete_note_permanently,
             commands::move_note,

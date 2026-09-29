@@ -153,6 +153,13 @@ already running an earlier version — no separate store or update server
 needed, it just reads `.../releases/latest/download/latest.json`, which
 `tauri-action` generates and attaches for you.
 
+Signing only happens here, in CI — a plain local `npm run build` produces
+an ordinary unsigned `.deb`/`.AppImage` (fine for testing the app itself)
+without needing any key at all. `createUpdaterArtifacts` is deliberately
+left out of `tauri.conf.json` and instead passed as a build arg in
+`release.yml`, so routine local builds don't need the private key just
+to run.
+
 **One-time setup before the first release**: the release workflow signs
 every build with a private key so the updater can verify it's really
 this project publishing the update, not something injected in transit.

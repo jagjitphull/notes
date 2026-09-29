@@ -60,3 +60,9 @@ jobs:
           # tag push immediately going live as a public release.
           releaseDraft: true
           prerelease: false
+          # Only the release build signs artifacts (needs the two
+          # TAURI_SIGNING_PRIVATE_KEY* secrets above) - deliberately not
+          # set in tauri.conf.json itself, so a plain local `npm run
+          # build` doesn't also demand a private key just to produce an
+          # ordinary (unsigned, non-updater-verifiable) test build.
+          args: --config '{"bundle":{"createUpdaterArtifacts":true}}'

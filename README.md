@@ -62,6 +62,44 @@ npm run dev     # launches the Tauri app with the Vite dev server
 On first launch you'll be asked where to store your notes (with quick-picks
 for detected Dropbox/pCloud/Nextcloud/etc folders, or a local-only default).
 
+## Testing Smart Search
+
+Smart Search (semantic search, see Status below) needs a real
+[Ollama](https://ollama.com) install to test — the rest of the app works
+with nothing extra, but this one feature depends on an actual local
+embedding model, so it can't be verified just by running the test suite.
+
+1. **Install Ollama** and confirm it's actually running:
+   ```
+   curl -fsSL https://ollama.com/install.sh | sh
+   curl http://127.0.0.1:11434/api/tags   # should return JSON, not a connection error
+   ```
+2. **Pull the embedding model** the app is hardcoded to use:
+   ```
+   ollama pull nomic-embed-text
+   ```
+3. **Run the app** (`npm run dev`, or a packaged build) and check:
+   - A sparkle toggle appears in the search box, right of the input. The app
+     checks Ollama's reachability on launch and then re-checks every ~15s
+     for as long as it's open — so the toggle shows up shortly after Ollama
+     becomes reachable, whether that's before or after you opened the app,
+     with no restart needed either way.
+   - Click the toggle, then search. The **first** search after opening the
+     app is slower than the rest — every note gets embedded once (after
+     that, only a note whose text actually changed gets re-embedded) — this
+     is expected, not a bug.
+   - The real test is **semantic, not keyword, matching**: write a note like
+     *"Need to renew my passport before the trip"* and search *"travel
+     documents"* — words that don't appear in the note at all. Regular
+     search (toggle off) finds nothing; Smart Search (toggle on) should
+     still surface it, because the embedding model understands the two are
+     related even without shared words.
+   - Stop Ollama (`sudo systemctl stop ollama`) while the app is open and
+     search again: it should silently fall back to regular search — no
+     crash, no error dialog — and the toggle should disappear within ~15s.
+   - Restart Ollama (`sudo systemctl start ollama`): the toggle should
+     reappear on its own within ~15s, with no app restart needed.
+
 ## Packaging / installing
 
 ```

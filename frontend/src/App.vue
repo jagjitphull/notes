@@ -62,6 +62,7 @@ const promptModal = ref<{
 let unlistenNotesChanged: UnlistenFn | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let smartSearchAvailabilityTimer: ReturnType<typeof setInterval> | undefined;
 let dirty = false;
 
 async function refreshData() {
@@ -69,6 +70,12 @@ async function refreshData() {
   folders.value = f;
   notes.value = n;
   tags.value = t;
+}
+
+async function refreshSmartSearchAvailability() {
+  const available = await smartSearchAvailable().catch(() => false);
+  smartSearchSupported.value = available;
+  if (!available) smartSearchEnabled.value = false;
 }
 
 onMounted(async () => {
@@ -82,11 +89,17 @@ onMounted(async () => {
   }
   loading.value = false;
 
-  smartSearchSupported.value = await smartSearchAvailable().catch(() => false);
+  await refreshSmartSearchAvailability();
+  // Ollama can start, stop, or restart independently of the app (it's a
+  // separate local service), so this can't be a one-shot check at launch:
+  // poll periodically to pick up either transition without needing a
+  // failed search or an app restart to notice.
+  smartSearchAvailabilityTimer = setInterval(refreshSmartSearchAvailability, 15000);
 });
 
 onUnmounted(() => {
   unlistenNotesChanged?.();
+  if (smartSearchAvailabilityTimer !== undefined) clearInterval(smartSearchAvailabilityTimer);
 });
 
 async function onSetupReady() {
@@ -119,9 +132,10 @@ async function runSearch(trimmed: string) {
       searchResults.value = await smartSearch(trimmed);
       return;
     } catch {
-      // Ollama most likely stopped running mid-session: fall back to
-      // regular search and stop offering Smart Search for the rest of
-      // this session rather than repeatedly failing on every keystroke.
+      // Ollama most likely stopped running: fall back to regular search
+      // immediately rather than repeatedly failing on every keystroke.
+      // The periodic availability check (see onMounted) will bring the
+      // toggle back on its own once/if Ollama becomes reachable again.
       smartSearchSupported.value = false;
       smartSearchEnabled.value = false;
     }

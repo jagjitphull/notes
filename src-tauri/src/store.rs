@@ -502,8 +502,16 @@ pub fn build_fts_query(raw: &str) -> String {
 /// `smart_search` rather than on every save, so a note that's never
 /// searched never costs an Ollama round trip; a note whose text hasn't
 /// changed since its last embedding is skipped via `content_hash`.
-pub fn ensure_embeddings_current(conn: &Connection) -> StoreResult<()> {
+///
+/// Takes the DB mutex rather than an already-locked `Connection` and
+/// re-locks it around each individual DB read/write, specifically so the
+/// lock is *not* held across `embeddings::embed`'s blocking HTTP call —
+/// otherwise indexing an un-embedded vault would stall every other DB-
+/// touching command (autosave, note list refresh, ...) for as long as
+/// re-embedding takes.
+pub fn ensure_embeddings_current(db: &std::sync::Mutex<Connection>) -> StoreResult<()> {
     let active_notes: Vec<(String, String, String)> = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare("SELECT id, title, plaintext_content FROM notes WHERE deleted_at IS NULL")
             .map_err(|e| e.to_string())?;
@@ -512,21 +520,24 @@ pub fn ensure_embeddings_current(conn: &Connection) -> StoreResult<()> {
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
     };
-    let active_ids: Vec<&str> = active_notes.iter().map(|(id, _, _)| id.as_str()).collect();
+    let active_ids: Vec<String> = active_notes.iter().map(|(id, _, _)| id.clone()).collect();
 
-    let embedded_ids: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT note_id FROM note_embeddings")
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |r| r.get::<_, String>(0))
-            .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-    };
-    for id in &embedded_ids {
-        if !active_ids.contains(&id.as_str()) {
-            conn.execute("DELETE FROM note_embeddings WHERE note_id = ?1", [id])
+    {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        let embedded_ids: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT note_id FROM note_embeddings")
                 .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        };
+        for id in &embedded_ids {
+            if !active_ids.contains(id) {
+                conn.execute("DELETE FROM note_embeddings WHERE note_id = ?1", [id])
+                    .map_err(|e| e.to_string())?;
+            }
         }
     }
 
@@ -537,19 +548,23 @@ pub fn ensure_embeddings_current(conn: &Connection) -> StoreResult<()> {
         }
         let hash = content_hash(&text);
 
-        let existing_hash: Option<String> = conn
-            .query_row(
+        let existing_hash: Option<String> = {
+            let conn = db.lock().map_err(|e| e.to_string())?;
+            conn.query_row(
                 "SELECT content_hash FROM note_embeddings WHERE note_id = ?1",
                 [&id],
                 |r| r.get(0),
             )
-            .ok();
+            .ok()
+        };
         if existing_hash.as_deref() == Some(hash.as_str()) {
             continue;
         }
 
-        let vector = embeddings::embed(&text)?;
+        let vector = embeddings::embed(&text)?; // no lock held during this HTTP call
         let bytes = embeddings::vector_to_bytes(&vector);
+
+        let conn = db.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT INTO note_embeddings (note_id, model, content_hash, vector, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -571,12 +586,17 @@ pub fn ensure_embeddings_current(conn: &Connection) -> StoreResult<()> {
 /// ids (best first). Re-embeds any stale/missing notes first, so results
 /// always reflect current on-disk content. Errors (most commonly: Ollama
 /// isn't running) propagate as-is — the caller falls back to FTS5 search.
-pub fn smart_search(conn: &Connection, query: &str, limit: usize) -> StoreResult<Vec<String>> {
-    ensure_embeddings_current(conn)?;
+///
+/// See `ensure_embeddings_current` for why this takes the DB mutex
+/// instead of a `Connection`: the query embedding is also a blocking
+/// HTTP call and must not be made while holding the lock.
+pub fn smart_search(db: &std::sync::Mutex<Connection>, query: &str, limit: usize) -> StoreResult<Vec<String>> {
+    ensure_embeddings_current(db)?;
 
     let query_vector = embeddings::embed(query)?;
 
     let rows: Vec<(String, Vec<u8>)> = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
                 "SELECT ne.note_id, ne.vector

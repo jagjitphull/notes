@@ -248,12 +248,12 @@ pub fn smart_search(db_state: State<DbState>, query: String) -> Result<Vec<NoteL
         return Ok(Vec::new());
     }
 
-    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    let ranked_ids = store::smart_search(&conn, trimmed, 30)?;
+    let ranked_ids = store::smart_search(&db_state.0, trimmed, 30)?;
     if ranked_ids.is_empty() {
         return Ok(Vec::new());
     }
 
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     let placeholders = ranked_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!("SELECT {NOTE_LIST_ITEM_COLUMNS} FROM notes n WHERE n.id IN ({placeholders})");
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;

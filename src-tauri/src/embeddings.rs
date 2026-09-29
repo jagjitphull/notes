@@ -53,6 +53,14 @@ pub fn vector_to_bytes(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
+// `slice::as_chunks` (clippy's suggested replacement for `chunks_exact`
+// here) postdates this crate's declared MSRV (1.90), so `chunks_exact`
+// stays - it's not a correctness concern, just a lint from a newer
+// clippy than what this crate targets. `unknown_lints` is allowed too
+// since older clippy (this crate's MSRV) doesn't recognize the lint name
+// below at all.
+#[allow(unknown_lints)]
+#[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn bytes_to_vector(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)

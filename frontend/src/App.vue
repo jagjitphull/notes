@@ -24,7 +24,10 @@ import {
   setNoteDeleted,
   setNotePinned,
 } from "./api";
+import { usePaneLayout } from "./composables/usePaneLayout";
 import type { Folder, Note, Tag } from "./types";
+
+const { sidebarCollapsed, listCollapsed, gridTemplateColumns, startResize } = usePaneLayout();
 
 const loading = ref(true);
 const notesRoot = ref<string | null>(null);
@@ -358,7 +361,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
   if (mod && e.key.toLowerCase() === "f") {
     e.preventDefault();
-    sidebarRef.value?.focusSearch();
+    if (sidebarCollapsed.value) {
+      sidebarCollapsed.value = false;
+      nextTick(() => sidebarRef.value?.focusSearch());
+    } else {
+      sidebarRef.value?.focusSearch();
+    }
     return;
   }
 
@@ -375,37 +383,85 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 <template>
   <FirstRunSetup v-if="!loading && !notesRoot" @ready="onSetupReady" />
 
-  <div v-else-if="!loading" class="app-shell">
-    <Sidebar
-      ref="sidebarRef"
-      v-model:selected-id="selectedId"
-      v-model:search-query="searchQuery"
-      :folders="folders"
-      :tags="tags"
-      :all-count="allCount"
-      :deleted-count="deletedCount"
-      :folder-counts="folderCounts"
-      @new-folder="promptNewFolder('')"
-      @folder-contextmenu="onFolderContextmenu"
-    />
-    <NoteList
-      v-model:selected-id="selectedNoteId"
-      :notes="filteredNotes"
-      :title="listTitle"
-      :show-pinned-sections="showPinnedSections"
-      :can-create="canCreate"
-      :is-trash="selectedId === 'recently-deleted'"
-      @create="onCreateNote"
-      @contextmenu="onNoteContextMenu"
-    />
-    <Editor
-      ref="editorRef"
-      v-model:body="editingBody"
-      :note="selectedNote"
-      :folders="folders"
-      @toggle-pin="onTogglePin"
-      @toggle-deleted="onToggleDeleted"
-    />
+  <div v-else-if="!loading" class="app-root">
+    <div class="top-bar">
+      <button
+        class="pane-toggle"
+        :class="{ active: !sidebarCollapsed }"
+        title="Toggle Sidebar"
+        @click="sidebarCollapsed = !sidebarCollapsed"
+      >
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" />
+          <line x1="8" y1="4" x2="8" y2="16" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </button>
+      <button
+        class="pane-toggle"
+        :class="{ active: !listCollapsed }"
+        title="Toggle Note List"
+        @click="listCollapsed = !listCollapsed"
+      >
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" />
+          <line x1="6.5" y1="7.5" x2="13.5" y2="7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="6.5" y1="10" x2="13.5" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="6.5" y1="12.5" x2="11" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="app-shell" :style="{ gridTemplateColumns }">
+      <Sidebar
+        v-if="!sidebarCollapsed"
+        ref="sidebarRef"
+        v-model:selected-id="selectedId"
+        v-model:search-query="searchQuery"
+        style="grid-column: 1"
+        :folders="folders"
+        :tags="tags"
+        :all-count="allCount"
+        :deleted-count="deletedCount"
+        :folder-counts="folderCounts"
+        @new-folder="promptNewFolder('')"
+        @folder-contextmenu="onFolderContextmenu"
+      />
+      <div
+        v-if="!sidebarCollapsed"
+        class="resize-handle"
+        style="grid-column: 2"
+        @pointerdown="startResize('sidebar', $event)"
+      />
+
+      <NoteList
+        v-if="!listCollapsed"
+        v-model:selected-id="selectedNoteId"
+        style="grid-column: 3"
+        :notes="filteredNotes"
+        :title="listTitle"
+        :show-pinned-sections="showPinnedSections"
+        :can-create="canCreate"
+        :is-trash="selectedId === 'recently-deleted'"
+        @create="onCreateNote"
+        @contextmenu="onNoteContextMenu"
+      />
+      <div
+        v-if="!listCollapsed"
+        class="resize-handle"
+        style="grid-column: 4"
+        @pointerdown="startResize('list', $event)"
+      />
+
+      <Editor
+        ref="editorRef"
+        v-model:body="editingBody"
+        style="grid-column: 5"
+        :note="selectedNote"
+        :folders="folders"
+        @toggle-pin="onTogglePin"
+        @toggle-deleted="onToggleDeleted"
+      />
+    </div>
 
     <ContextMenu
       v-if="contextMenu"
@@ -426,11 +482,66 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 </template>
 
 <style scoped>
-.app-shell {
-  display: grid;
-  grid-template-columns: 220px 300px 1fr;
+.app-root {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   width: 100%;
   overflow: hidden;
+}
+
+.top-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.pane-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.pane-toggle.active {
+  color: var(--accent-blue);
+}
+
+.pane-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.app-shell {
+  flex: 1 1 auto;
+  display: grid;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.resize-handle {
+  cursor: col-resize;
+  background: transparent;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+  background: var(--accent-blue);
+  opacity: 0.5;
 }
 </style>

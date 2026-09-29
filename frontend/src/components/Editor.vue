@@ -6,8 +6,28 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
+import HighlightBase from "@tiptap/extension-highlight";
 import { Markdown } from "tiptap-markdown";
+import markdownItMark from "markdown-it-mark";
 import type { Folder, Note } from "../types";
+
+// Round-trips through the "==highlighted==" markdown-it-mark convention
+// (same syntax Obsidian and others use), since tiptap-markdown has no
+// built-in spec for this mark and CommonMark has no native highlight syntax.
+const Highlight = HighlightBase.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize: { open: "==", close: "==" },
+        parse: {
+          setup(markdownit: import("markdown-it")) {
+            markdownit.use(markdownItMark);
+          },
+        },
+      },
+    };
+  },
+});
 
 const props = defineProps<{
   note: Note | null;
@@ -32,6 +52,7 @@ const editor = useEditor({
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: "New Note" }),
     Image,
+    Highlight,
     Markdown.configure({
       html: false,
       tightLists: true,
@@ -131,6 +152,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
     { label: "Italic", icon: "I", isActive: () => e.isActive("italic"), run: () => chain().toggleItalic().run() },
     { label: "Underline", icon: "U", isActive: () => e.isActive("underline"), run: () => chain().toggleUnderline().run() },
     { label: "Strikethrough", icon: "S", isActive: () => e.isActive("strike"), run: () => chain().toggleStrike().run() },
+    { label: "Highlight", icon: "✎", isActive: () => e.isActive("highlight"), run: () => chain().toggleHighlight().run() },
     { label: "Heading 1", icon: "H1", isActive: () => e.isActive("heading", { level: 1 }), run: () => chain().toggleHeading({ level: 1 }).run() },
     { label: "Heading 2", icon: "H2", isActive: () => e.isActive("heading", { level: 2 }), run: () => chain().toggleHeading({ level: 2 }).run() },
     { label: "Checklist", icon: "☑", isActive: () => e.isActive("taskList"), run: () => chain().toggleTaskList().run() },
@@ -370,6 +392,13 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 .editor-content :deep(.ProseMirror pre code) {
   background: none;
   padding: 0;
+}
+
+.editor-content :deep(.ProseMirror mark) {
+  background: var(--accent-yellow);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 .editor-content :deep(.ProseMirror img) {

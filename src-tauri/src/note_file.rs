@@ -82,10 +82,10 @@ fn strip_markdown_prefix(line: &str) -> String {
     }
 
     let hash_count = s.chars().take_while(|&c| c == '#').count();
-    if (1..=6).contains(&hash_count) {
-        if let Some(rest) = s[hash_count..].strip_prefix(' ') {
-            s = rest;
-        }
+    if (1..=6).contains(&hash_count)
+        && let Some(rest) = s[hash_count..].strip_prefix(' ')
+    {
+        s = rest;
     }
 
     for bullet in ['-', '*', '+'] {
@@ -108,7 +108,10 @@ fn strip_markdown_prefix(line: &str) -> String {
     let digit_count = s.chars().take_while(|c| c.is_ascii_digit()).count();
     if digit_count > 0 {
         let after = &s[digit_count..];
-        if let Some(rest) = after.strip_prefix(". ").or_else(|| after.strip_prefix(") ")) {
+        if let Some(rest) = after
+            .strip_prefix(". ")
+            .or_else(|| after.strip_prefix(") "))
+        {
             s = rest;
         }
     }

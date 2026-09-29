@@ -94,10 +94,7 @@ pub fn set_notes_root(
     let path = PathBuf::from(path);
     std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
 
-    let app_config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
+    let app_config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     config::save(
         &app_config_dir,
         &AppConfig {
@@ -150,7 +147,8 @@ pub fn list_folders(db_state: State<DbState>) -> Result<Vec<FolderDto>, String> 
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -197,7 +195,8 @@ pub fn list_notes(db_state: State<DbState>) -> Result<Vec<NoteListItemDto>, Stri
     let rows = stmt
         .query_map([], map_note_list_item)
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// Searches notes via the FTS5 index (title + full body), ranked by
@@ -206,7 +205,10 @@ pub fn list_notes(db_state: State<DbState>) -> Result<Vec<NoteListItemDto>, Stri
 /// so free-form query text can't be misread as FTS5 query syntax (column
 /// filters, boolean operators, etc).
 #[tauri::command]
-pub fn search_notes(db_state: State<DbState>, query: String) -> Result<Vec<NoteListItemDto>, String> {
+pub fn search_notes(
+    db_state: State<DbState>,
+    query: String,
+) -> Result<Vec<NoteListItemDto>, String> {
     let fts_query = store::build_fts_query(&query);
     if fts_query.is_empty() {
         return Ok(Vec::new());
@@ -225,7 +227,8 @@ pub fn search_notes(db_state: State<DbState>, query: String) -> Result<Vec<NoteL
     let rows = stmt
         .query_map([fts_query], map_note_list_item)
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// Fast reachability check so the frontend can decide whether to show the
@@ -242,7 +245,10 @@ pub fn smart_search_available() -> bool {
 /// always: Ollama isn't reachable) are meant to be caught by the frontend
 /// and silently fall back to `search_notes`.
 #[tauri::command]
-pub fn smart_search(db_state: State<DbState>, query: String) -> Result<Vec<NoteListItemDto>, String> {
+pub fn smart_search(
+    db_state: State<DbState>,
+    query: String,
+) -> Result<Vec<NoteListItemDto>, String> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
@@ -255,10 +261,13 @@ pub fn smart_search(db_state: State<DbState>, query: String) -> Result<Vec<NoteL
 
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     let placeholders = ranked_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("SELECT {NOTE_LIST_ITEM_COLUMNS} FROM notes n WHERE n.id IN ({placeholders})");
+    let sql =
+        format!("SELECT {NOTE_LIST_ITEM_COLUMNS} FROM notes n WHERE n.id IN ({placeholders})");
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let query_params: Vec<&dyn rusqlite::ToSql> =
-        ranked_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+    let query_params: Vec<&dyn rusqlite::ToSql> = ranked_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
     let rows = stmt
         .query_map(query_params.as_slice(), map_note_list_item)
         .map_err(|e| e.to_string())?;
@@ -271,7 +280,10 @@ pub fn smart_search(db_state: State<DbState>, query: String) -> Result<Vec<NoteL
         .collect();
 
     // Re-apply the ranking: the SQL above came back in arbitrary IN(...) order.
-    Ok(ranked_ids.into_iter().filter_map(|id| by_id.remove(&id)).collect())
+    Ok(ranked_ids
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect())
 }
 
 #[derive(Serialize)]
@@ -305,7 +317,8 @@ pub fn list_tags(db_state: State<DbState>) -> Result<Vec<TagDto>, String> {
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -317,8 +330,10 @@ pub fn get_note_body(
     let notes_root = require_notes_root(&root_state)?;
     let rel_path: String = {
         let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-        conn.query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
-            .map_err(|e| e.to_string())?
+        conn.query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?
     };
     store::read_note_body(&notes_root, &rel_path)
 }

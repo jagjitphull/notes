@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use notify::RecommendedWatcher;
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
+use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::db::DbState;
@@ -18,18 +18,21 @@ pub fn restart(app: &AppHandle, notes_root: PathBuf) {
     let watch_path = notes_root.clone();
     let app_handle = app.clone();
 
-    let debouncer = new_debouncer(Duration::from_millis(600), move |res: DebounceEventResult| {
-        if res.is_err() {
-            return;
-        }
-        let db_state = app_handle.state::<DbState>();
-        let conn = db_state.0.lock().expect("db mutex poisoned");
-        if let Err(e) = store::full_rescan(&conn, &notes_root) {
-            log::warn!("rescan after file change failed: {e}");
-        }
-        drop(conn);
-        let _ = app_handle.emit("notes-changed", ());
-    });
+    let debouncer = new_debouncer(
+        Duration::from_millis(600),
+        move |res: DebounceEventResult| {
+            if res.is_err() {
+                return;
+            }
+            let db_state = app_handle.state::<DbState>();
+            let conn = db_state.0.lock().expect("db mutex poisoned");
+            if let Err(e) = store::full_rescan(&conn, &notes_root) {
+                log::warn!("rescan after file change failed: {e}");
+            }
+            drop(conn);
+            let _ = app_handle.emit("notes-changed", ());
+        },
+    );
 
     let mut debouncer = match debouncer {
         Ok(d) => d,

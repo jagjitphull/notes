@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -97,10 +97,10 @@ pub fn full_rescan(conn: &Connection, notes_root: &Path) -> StoreResult<()> {
             )
             .map_err(|e| e.to_string())?;
             seen_folder_ids.push(id);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
-            if let Some(id) = upsert_note_file(conn, notes_root, path)? {
-                seen_note_ids.push(id);
-            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md")
+            && let Some(id) = upsert_note_file(conn, notes_root, path)?
+        {
+            seen_note_ids.push(id);
         }
     }
 
@@ -126,7 +126,8 @@ fn all_ids(conn: &Connection, table: &str) -> StoreResult<Vec<String>> {
     let rows = stmt
         .query_map([], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// Parses one Markdown file and upserts it into the index. Files without
@@ -210,7 +211,8 @@ fn sync_tags(conn: &Connection, note_id: &str, tag_names: &[String]) -> StoreRes
         let rows = stmt
             .query_map([note_id], |r| r.get::<_, String>(0))
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
     conn.execute("DELETE FROM note_tags WHERE note_id = ?1", [note_id])
@@ -251,8 +253,11 @@ fn ensure_tag(conn: &Connection, name: &str) -> StoreResult<String> {
         return Ok(id);
     }
     let id = Uuid::new_v4().to_string();
-    conn.execute("INSERT INTO tags (id, name) VALUES (?1, ?2)", params![id, name])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO tags (id, name) VALUES (?1, ?2)",
+        params![id, name],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(id)
 }
 
@@ -391,7 +396,12 @@ fn mutate_front_matter(
     Ok(())
 }
 
-pub fn set_pinned(conn: &Connection, notes_root: &Path, note_id: &str, pinned: bool) -> StoreResult<()> {
+pub fn set_pinned(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    pinned: bool,
+) -> StoreResult<()> {
     mutate_front_matter(conn, notes_root, note_id, |fm| fm.pinned = pinned)
 }
 
@@ -436,7 +446,11 @@ pub fn remove_tag_from_note(
 
 /// Permanently erases a note (right-click "Delete Permanently" from
 /// Recently Deleted) — removes the file from disk, not just the DB row.
-pub fn delete_note_permanently(conn: &Connection, notes_root: &Path, note_id: &str) -> StoreResult<()> {
+pub fn delete_note_permanently(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+) -> StoreResult<()> {
     let rel: String = conn
         .query_row(
             "SELECT file_path FROM notes WHERE id = ?1",
@@ -471,7 +485,8 @@ pub fn purge_expired_trash(
         let rows = stmt
             .query_map([&cutoff], |r| r.get::<_, String>(0))
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
     for id in &ids {
         delete_note_permanently(conn, notes_root, id)?;
@@ -518,7 +533,8 @@ pub fn ensure_embeddings_current(db: &std::sync::Mutex<Connection>) -> StoreResu
         let rows = stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
     let active_ids: Vec<String> = active_notes.iter().map(|(id, _, _)| id.clone()).collect();
 
@@ -531,7 +547,8 @@ pub fn ensure_embeddings_current(db: &std::sync::Mutex<Connection>) -> StoreResu
             let rows = stmt
                 .query_map([], |r| r.get::<_, String>(0))
                 .map_err(|e| e.to_string())?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
         };
         for id in &embedded_ids {
             if !active_ids.contains(id) {
@@ -590,7 +607,11 @@ pub fn ensure_embeddings_current(db: &std::sync::Mutex<Connection>) -> StoreResu
 /// See `ensure_embeddings_current` for why this takes the DB mutex
 /// instead of a `Connection`: the query embedding is also a blocking
 /// HTTP call and must not be made while holding the lock.
-pub fn smart_search(db: &std::sync::Mutex<Connection>, query: &str, limit: usize) -> StoreResult<Vec<String>> {
+pub fn smart_search(
+    db: &std::sync::Mutex<Connection>,
+    query: &str,
+    limit: usize,
+) -> StoreResult<Vec<String>> {
     ensure_embeddings_current(db)?;
 
     let query_vector = embeddings::embed(query)?;
@@ -608,7 +629,8 @@ pub fn smart_search(db: &std::sync::Mutex<Connection>, query: &str, limit: usize
         let rows = stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
     let mut scored: Vec<(String, f32)> = rows
@@ -631,7 +653,9 @@ fn unique_path_for_name(dir: &Path, filename: &std::ffi::OsStr) -> PathBuf {
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let ext = name_path.extension().map(|s| s.to_string_lossy().to_string());
+    let ext = name_path
+        .extension()
+        .map(|s| s.to_string_lossy().to_string());
 
     let mut candidate = dir.join(filename);
     let mut n = 2;
@@ -801,7 +825,9 @@ mod tests {
         // Renaming the title (first line) should rename the file too.
         save_note_body(&conn, &notes_root, &id, "Shopping list\nMilk, eggs").unwrap();
         let file_path: String = conn
-            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(file_path, "Shopping list.md");
         assert!(!notes_root.join("Grocery list.md").exists());
@@ -809,19 +835,25 @@ mod tests {
 
         set_pinned(&conn, &notes_root, &id, true).unwrap();
         let pinned: bool = conn
-            .query_row("SELECT is_pinned FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT is_pinned FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(pinned);
 
         set_deleted(&conn, &notes_root, &id, true).unwrap();
         let deleted_at: Option<String> = conn
-            .query_row("SELECT deleted_at FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT deleted_at FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(deleted_at.is_some());
 
         // A full rescan should reproduce the exact same index state.
         full_rescan(&conn, &notes_root).unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -833,16 +865,22 @@ mod tests {
 
         let id = create_note(&conn, &notes_root, "").unwrap();
         full_rescan(&conn, &notes_root).unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 1);
 
         let file_path: String = conn
-            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         fs::remove_file(notes_root.join(file_path)).unwrap();
 
         full_rescan(&conn, &notes_root).unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -855,14 +893,18 @@ mod tests {
         let id = create_note(&conn, &notes_root, "Work").unwrap();
 
         let folder_id: String = conn
-            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(folder_id, "Work");
 
         // A rescan (the path the app actually runs on startup) must agree.
         full_rescan(&conn, &notes_root).unwrap();
         let folder_id_after_rescan: String = conn
-            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(folder_id_after_rescan, "Work");
     }
@@ -906,7 +948,10 @@ mod tests {
                      WHERE nt.note_id = ?1 ORDER BY t.name",
                 )
                 .unwrap();
-            stmt.query_map([&id], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+            stmt.query_map([&id], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
         };
         assert_eq!(tag_names, vec!["Work".to_string(), "urgent".to_string()]);
 
@@ -919,7 +964,10 @@ mod tests {
                      WHERE nt.note_id = ?1",
                 )
                 .unwrap();
-            stmt.query_map([&id], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+            stmt.query_map([&id], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
         };
         assert_eq!(tag_names_after, vec!["urgent".to_string()]);
 
@@ -933,7 +981,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(!work_tag_exists, "orphaned tag should have been garbage-collected");
+        assert!(
+            !work_tag_exists,
+            "orphaned tag should have been garbage-collected"
+        );
 
         let urgent_tag_exists: bool = conn
             .query_row(
@@ -959,7 +1010,11 @@ mod tests {
         let note_id = create_note(&conn, &notes_root, "").unwrap();
         move_note(&conn, &notes_root, &note_id, &work_id).unwrap();
         let folder_id: String = conn
-            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&note_id], |r| r.get(0))
+            .query_row(
+                "SELECT folder_id FROM notes WHERE id = ?1",
+                [&note_id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(folder_id, "Work");
 
@@ -971,7 +1026,11 @@ mod tests {
         assert!(!notes_root.join("Work").exists());
         assert!(notes_root.join("Projects").is_dir());
         let folder_id_after_rename: String = conn
-            .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&note_id], |r| r.get(0))
+            .query_row(
+                "SELECT folder_id FROM notes WHERE id = ?1",
+                [&note_id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(folder_id_after_rename, "Projects");
 
@@ -996,13 +1055,17 @@ mod tests {
 
         let id = create_note(&conn, &notes_root, "").unwrap();
         let rel: String = conn
-            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(notes_root.join(&rel).exists());
 
         delete_note_permanently(&conn, &notes_root, &id).unwrap();
         assert!(!notes_root.join(&rel).exists());
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1028,7 +1091,10 @@ mod tests {
 
         let remaining_ids: Vec<String> = {
             let mut stmt = conn.prepare("SELECT id FROM notes ORDER BY id").unwrap();
-            stmt.query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
         };
         assert!(!remaining_ids.contains(&old_id));
         assert!(remaining_ids.contains(&recent_id));
@@ -1044,6 +1110,9 @@ mod tests {
         // A quote in the query must not break out of FTS5's string literal.
         assert_eq!(build_fts_query("say \"hi\""), "\"say\"* \"\"\"hi\"\"\"*");
         // Would otherwise be read as FTS5 boolean/column-filter syntax.
-        assert_eq!(build_fts_query("title:foo AND bar"), "\"title:foo\"* \"AND\"* \"bar\"*");
+        assert_eq!(
+            build_fts_query("title:foo AND bar"),
+            "\"title:foo\"* \"AND\"* \"bar\"*"
+        );
     }
 }

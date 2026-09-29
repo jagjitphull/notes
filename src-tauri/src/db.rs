@@ -28,7 +28,9 @@ pub fn init(app_data_dir: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(db_path)?;
     // `journal_mode` returns the resulting mode as a row, so it can't go
     // through `pragma_update` (which expects no result set).
-    conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get::<_, String>(0))?;
+    conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
+        row.get::<_, String>(0)
+    })?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
 
     run_migrations(&conn)?;
@@ -58,10 +60,7 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         }
 
         conn.execute_batch(sql)?;
-        conn.execute(
-            "INSERT INTO schema_migrations (name) VALUES (?1)",
-            [name],
-        )?;
+        conn.execute("INSERT INTO schema_migrations (name) VALUES (?1)", [name])?;
     }
 
     Ok(())

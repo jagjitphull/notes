@@ -9,9 +9,9 @@ mod watcher;
 use std::sync::Mutex;
 
 use tauri::{
+    Manager, WindowEvent,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager, WindowEvent,
 };
 
 use commands::NotesRootState;
@@ -68,8 +68,14 @@ pub fn run() {
                     if let Err(e) = store::full_rescan(&conn, &notes_root) {
                         log::warn!("initial notes rescan failed: {e}");
                     }
-                    match store::purge_expired_trash(&conn, &notes_root, store::TRASH_RETENTION_DAYS) {
-                        Ok(n) if n > 0 => log::info!("purged {n} note(s) past the trash retention window"),
+                    match store::purge_expired_trash(
+                        &conn,
+                        &notes_root,
+                        store::TRASH_RETENTION_DAYS,
+                    ) {
+                        Ok(n) if n > 0 => {
+                            log::info!("purged {n} note(s) past the trash retention window")
+                        }
                         Ok(_) => {}
                         Err(e) => log::warn!("trash purge failed: {e}"),
                     }

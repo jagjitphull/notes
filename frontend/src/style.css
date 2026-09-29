@@ -22,34 +22,39 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg-sidebar: #1e1e1e;
-    --bg-list: #202020;
-    --bg-editor: #1e1e1e;
-    --bg-hover: rgba(255, 255, 255, 0.06);
-    --bg-selected: rgba(10, 132, 255, 0.22);
+    /* A softer charcoal palette rather than near-black + near-white:
+       lighter surfaces and dimmed (not pure white) text both narrow the
+       contrast range, which is the standard fix for dark-mode eye strain
+       (Material Design explicitly recommends ~87% white over #fff on
+       dark surfaces for the same reason). */
+    --bg-sidebar: #26262a;
+    --bg-list: #2a2a2e;
+    --bg-editor: #28282b;
+    --bg-hover: rgba(255, 255, 255, 0.05);
+    --bg-selected: rgba(10, 132, 255, 0.18);
     --bg-selected-strong: #0a84ff;
 
-    --border: #38383a;
-    --text-primary: #f2f2f2;
+    --border: #3c3c40;
+    --text-primary: #d8d8dc;
     --text-secondary: #98989d;
     --text-tertiary: #6e6e73;
-    --accent-yellow: #f7cd3a;
+    --accent-yellow: #e8c04a;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg-sidebar: #1e1e1e;
-  --bg-list: #202020;
-  --bg-editor: #1e1e1e;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-selected: rgba(10, 132, 255, 0.22);
+  --bg-sidebar: #26262a;
+  --bg-list: #2a2a2e;
+  --bg-editor: #28282b;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-selected: rgba(10, 132, 255, 0.18);
   --bg-selected-strong: #0a84ff;
 
-  --border: #38383a;
-  --text-primary: #f2f2f2;
+  --border: #3c3c40;
+  --text-primary: #d8d8dc;
   --text-secondary: #98989d;
   --text-tertiary: #6e6e73;
-  --accent-yellow: #f7cd3a;
+  --accent-yellow: #e8c04a;
 }
 
 * {

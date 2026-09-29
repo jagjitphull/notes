@@ -115,6 +115,11 @@ function preview(note: Note): string {
 <style scoped>
 .note-list {
   height: 100%;
+  /* Also a grid item (in App.vue's .app-shell), which has the same
+     content-based min-height default as flex - without this, a long
+     note in the adjacent Editor pane could inflate the shared grid
+     row's height and stretch this pane past the viewport too. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-list);
@@ -146,6 +151,10 @@ function preview(note: Note): string {
 
 .scroll-area {
   flex: 1 1 auto;
+  /* Flex items default to min-height: auto (content-based), which
+     overrides flex-shrink and defeats overflow-y: auto - a long note
+     list would just grow the box instead of scrolling within it. */
+  min-height: 0;
   overflow-y: auto;
   padding: 0 6px 12px;
 }

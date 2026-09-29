@@ -258,6 +258,9 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 <style scoped>
 .editor {
   height: 100%;
+  /* Also a grid item (in App.vue's .app-shell) - see NoteList.vue's
+     .note-list comment for why this needs min-height: 0 too. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-editor);
@@ -383,6 +386,10 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 
 .editor-canvas {
   flex: 1 1 auto;
+  /* Flex items default to min-height: auto (content-based), which
+     overrides flex-shrink and defeats overflow-y: auto - a long note
+     would just grow the box instead of scrolling within it. */
+  min-height: 0;
   overflow-y: auto;
   padding: 16px 48px 48px;
   max-width: 760px;

@@ -179,6 +179,11 @@ defineExpose({ focusSearch });
 <style scoped>
 .sidebar {
   height: 100%;
+  /* A grid item (in App.vue's .app-shell) with its own overflow-y -
+     needs min-height: 0 so a long folder/tag list actually scrolls
+     within the pane instead of inflating the shared grid row's
+     height. See NoteList.vue's .note-list comment for more. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-sidebar);

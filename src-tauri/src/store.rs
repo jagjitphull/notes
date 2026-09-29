@@ -385,6 +385,35 @@ pub fn delete_note_permanently(conn: &Connection, notes_root: &Path, note_id: &s
     Ok(())
 }
 
+/// How long a note stays in Recently Deleted before it's erased for good,
+/// matching Apple Notes' own retention window.
+pub const TRASH_RETENTION_DAYS: i64 = 30;
+
+/// Permanently erases every note that has been in Recently Deleted longer
+/// than `max_age_days`. Called on every startup (and whenever the notes
+/// root changes), so trash is swept without needing the app to keep
+/// running or a background scheduler.
+pub fn purge_expired_trash(
+    conn: &Connection,
+    notes_root: &Path,
+    max_age_days: i64,
+) -> StoreResult<usize> {
+    let cutoff = (Utc::now() - chrono::Duration::days(max_age_days)).to_rfc3339();
+    let ids: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT id FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([&cutoff], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+    };
+    for id in &ids {
+        delete_note_permanently(conn, notes_root, id)?;
+    }
+    Ok(ids.len())
+}
+
 pub fn read_note_body(notes_root: &Path, rel_file_path: &str) -> StoreResult<String> {
     let raw = fs::read_to_string(notes_root.join(rel_file_path)).map_err(|e| e.to_string())?;
     Ok(note_file::parse(&raw).body)
@@ -722,6 +751,35 @@ mod tests {
         assert!(!notes_root.join(&rel).exists());
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn purge_expired_trash_removes_only_notes_past_retention() {
+        let app_dir = temp_dir("app7");
+        let notes_root = temp_dir("root7");
+        let conn = db::init(&app_dir).unwrap();
+
+        let old_id = create_note(&conn, &notes_root, "").unwrap();
+        let recent_id = create_note(&conn, &notes_root, "").unwrap();
+        let kept_id = create_note(&conn, &notes_root, "").unwrap(); // never deleted
+
+        let old_deleted_at = (Utc::now() - chrono::Duration::days(31)).to_rfc3339();
+        mutate_front_matter(&conn, &notes_root, &old_id, |fm| {
+            fm.deleted_at = Some(old_deleted_at);
+        })
+        .unwrap();
+        set_deleted(&conn, &notes_root, &recent_id, true).unwrap(); // deleted "now"
+
+        let purged = purge_expired_trash(&conn, &notes_root, TRASH_RETENTION_DAYS).unwrap();
+        assert_eq!(purged, 1);
+
+        let remaining_ids: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT id FROM notes ORDER BY id").unwrap();
+            stmt.query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        assert!(!remaining_ids.contains(&old_id));
+        assert!(remaining_ids.contains(&recent_id));
+        assert!(remaining_ids.contains(&kept_id));
     }
 
     #[test]

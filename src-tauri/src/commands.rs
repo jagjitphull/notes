@@ -109,6 +109,7 @@ pub fn set_notes_root(
     {
         let conn = db_state.0.lock().map_err(|e| e.to_string())?;
         store::full_rescan(&conn, &path)?;
+        store::purge_expired_trash(&conn, &path, store::TRASH_RETENTION_DAYS)?;
     }
 
     *root_state.0.lock().map_err(|e| e.to_string())? = Some(path.clone());

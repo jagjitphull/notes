@@ -394,6 +394,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       :title="listTitle"
       :show-pinned-sections="showPinnedSections"
       :can-create="canCreate"
+      :is-trash="selectedId === 'recently-deleted'"
       @create="onCreateNote"
       @contextmenu="onNoteContextMenu"
     />

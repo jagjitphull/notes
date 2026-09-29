@@ -7,6 +7,7 @@ const props = defineProps<{
   title: string;
   showPinnedSections: boolean;
   canCreate: boolean;
+  isTrash: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -74,6 +75,10 @@ function preview(note: Note): string {
       </button>
     </div>
 
+    <p v-if="isTrash" class="trash-notice">
+      Notes are deleted permanently from here after 30 days.
+    </p>
+
     <div class="scroll-area">
       <p v-if="notes.length === 0" class="empty-state">No Notes</p>
 
@@ -130,6 +135,13 @@ function preview(note: Note): string {
 
 .new-note-button {
   flex: 0 0 auto;
+}
+
+.trash-notice {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin: 0 12px 8px;
 }
 
 .scroll-area {

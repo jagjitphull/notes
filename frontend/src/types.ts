@@ -2,6 +2,7 @@ export interface Folder {
   id: string;
   name: string;
   parentId: string | null;
+  color: string | null;
 }
 
 export interface Tag {
@@ -22,6 +23,7 @@ export interface Note {
   tagIds: string[];
   isPinned: boolean;
   deletedAt: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 

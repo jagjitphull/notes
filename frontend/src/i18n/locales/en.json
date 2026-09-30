@@ -48,7 +48,15 @@
     "trashNotice": "Notes are deleted permanently from here after 30 days.",
     "empty": "No Notes",
     "pinned": "Pinned",
-    "smartSearchPrefix": "Smart Search: "
+    "smartSearchPrefix": "Smart Search: ",
+    "sort": {
+      "label": "Sort By",
+      "dateModified": "Date Modified",
+      "dateCreated": "Date Created",
+      "title": "Title",
+      "ascending": "Ascending",
+      "descending": "Descending"
+    }
   },
   "editor": {
     "placeholder": "New Note",
@@ -79,7 +87,16 @@
     "moveTo": "Move to “{folder}”",
     "newSubfolder": "New Subfolder…",
     "renameEllipsis": "Rename…",
-    "cantDeleteFolder": "Can't delete \"{name}\": {error}"
+    "cantDeleteFolder": "Can't delete \"{name}\": {error}",
+    "folderColorNone": "Default Color",
+    "colorRed": "Red",
+    "colorOrange": "Orange",
+    "colorYellow": "Yellow",
+    "colorGreen": "Green",
+    "colorBlue": "Blue",
+    "colorIndigo": "Indigo",
+    "colorPurple": "Purple",
+    "colorGray": "Gray"
   },
   "promptModal": {
     "addTagTitle": "Add Tag",

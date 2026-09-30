@@ -25,6 +25,7 @@ import {
   renameFolder,
   saveNoteBody,
   searchNotes,
+  setFolderColor,
   setNoteDeleted,
   setNotePinned,
   smartSearch,
@@ -32,9 +33,31 @@ import {
 } from "./api";
 import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
+import { useSortPreference } from "./composables/useSortPreference";
 import type { Folder, Note, Tag } from "./types";
 
+// A fixed accent palette (matching the system-color style Apple Notes/
+// Finder use for tags and folders) rather than a free-form color picker -
+// keeps every folder's tint one of a small, visually distinct set.
+const FOLDER_COLOR_PALETTE = [
+  { value: "#ff3b30", labelKey: "contextMenu.colorRed" },
+  { value: "#ff9500", labelKey: "contextMenu.colorOrange" },
+  { value: "#ffcc00", labelKey: "contextMenu.colorYellow" },
+  { value: "#34c759", labelKey: "contextMenu.colorGreen" },
+  { value: "#0a84ff", labelKey: "contextMenu.colorBlue" },
+  { value: "#5e5ce6", labelKey: "contextMenu.colorIndigo" },
+  { value: "#af52de", labelKey: "contextMenu.colorPurple" },
+  { value: "#8e8e93", labelKey: "contextMenu.colorGray" },
+] as const;
+
 const { t } = useI18n();
+
+const {
+  field: sortField,
+  direction: sortDirection,
+  setField: setSortField,
+  setDirection: setSortDirection,
+} = useSortPreference();
 
 const {
   sidebarCollapsed,
@@ -212,13 +235,18 @@ const canCreate = computed(
 
 const filteredNotes = computed(() => {
   // Search results already come back relevance-ranked from FTS5; browsing
-  // (not searching) sorts pinned-first then by modified date instead.
+  // (not searching) sorts pinned-first then by the user's chosen field.
   if (isSearching.value) return baseNotes.value;
+  const dir = sortDirection.value === "asc" ? 1 : -1;
   return [...baseNotes.value].sort((a, b) => {
     if (showPinnedSections.value && a.isPinned !== b.isPinned) {
       return a.isPinned ? -1 : 1;
     }
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    if (sortField.value === "title") {
+      return dir * a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    }
+    const key = sortField.value;
+    return dir * (new Date(a[key]).getTime() - new Date(b[key]).getTime());
   });
 });
 
@@ -384,6 +412,25 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
       disabled: isRoot,
       action: () => promptRenameFolder(folder),
     },
+    { label: "", action: () => {}, separator: true },
+    {
+      label: "",
+      action: () => {},
+      swatches: [
+        {
+          color: null,
+          label: t("contextMenu.folderColorNone"),
+          selected: !folder.color,
+          action: () => setFolderColor(folder.id, null).then(refreshData),
+        },
+        ...FOLDER_COLOR_PALETTE.map(({ value, labelKey }) => ({
+          color: value,
+          label: t(labelKey),
+          selected: folder.color === value,
+          action: () => setFolderColor(folder.id, value).then(refreshData),
+        })),
+      ],
+    },
     {
       label: t("common.delete"),
       danger: true,
@@ -397,6 +444,38 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
           alert(t("contextMenu.cantDeleteFolder", { name: folder.name, error: String(e) }));
         }
       },
+    },
+  ];
+  contextMenu.value = { x: event.clientX, y: event.clientY, items };
+}
+
+function onSortClick(event: MouseEvent) {
+  const items: ContextMenuItem[] = [
+    {
+      label: t("noteList.sort.dateModified"),
+      checked: sortField.value === "updatedAt",
+      action: () => setSortField("updatedAt"),
+    },
+    {
+      label: t("noteList.sort.dateCreated"),
+      checked: sortField.value === "createdAt",
+      action: () => setSortField("createdAt"),
+    },
+    {
+      label: t("noteList.sort.title"),
+      checked: sortField.value === "title",
+      action: () => setSortField("title"),
+    },
+    { label: "", action: () => {}, separator: true },
+    {
+      label: t("noteList.sort.ascending"),
+      checked: sortDirection.value === "asc",
+      action: () => setSortDirection("asc"),
+    },
+    {
+      label: t("noteList.sort.descending"),
+      checked: sortDirection.value === "desc",
+      action: () => setSortDirection("desc"),
     },
   ];
   contextMenu.value = { x: event.clientX, y: event.clientY, items };
@@ -563,6 +642,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :is-trash="selectedId === 'recently-deleted'"
         @create="onCreateNote"
         @contextmenu="onNoteContextMenu"
+        @sort-click="onSortClick"
       />
       <div
         v-if="!listCollapsed"

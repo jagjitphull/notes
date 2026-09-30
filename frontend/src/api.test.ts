@@ -83,6 +83,14 @@ describe("api.ts Tauri command bindings", () => {
     expect(invokeMock).toHaveBeenCalledWith("delete_folder", { id: "folder-1" });
   });
 
+  it("setFolderColor -> set_folder_color", () => {
+    api.setFolderColor("folder-1", "#ff9500");
+    expect(invokeMock).toHaveBeenCalledWith("set_folder_color", {
+      id: "folder-1",
+      color: "#ff9500",
+    });
+  });
+
   it("getNoteBody -> get_note_body", () => {
     api.getNoteBody("note-1");
     expect(invokeMock).toHaveBeenCalledWith("get_note_body", { id: "note-1" });

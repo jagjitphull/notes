@@ -130,13 +130,14 @@ pub struct FolderDto {
     pub id: String,
     pub name: String,
     pub parent_id: Option<String>,
+    pub color: Option<String>,
 }
 
 #[tauri::command]
 pub fn list_folders(db_state: State<DbState>) -> Result<Vec<FolderDto>, String> {
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
-        .prepare("SELECT id, name, parent_id FROM folders ORDER BY name")
+        .prepare("SELECT id, name, parent_id, color FROM folders ORDER BY name")
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| {
@@ -144,6 +145,7 @@ pub fn list_folders(db_state: State<DbState>) -> Result<Vec<FolderDto>, String> 
                 id: r.get(0)?,
                 name: r.get(1)?,
                 parent_id: r.get(2)?,
+                color: r.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -161,15 +163,16 @@ pub struct NoteListItemDto {
     pub tag_ids: Vec<String>,
     pub is_pinned: bool,
     pub deleted_at: Option<String>,
+    pub created_at: String,
     pub updated_at: String,
 }
 
 const NOTE_LIST_ITEM_COLUMNS: &str = "n.id, n.title, n.plaintext_content, n.folder_id, n.is_pinned,
-     n.deleted_at, n.updated_at,
+     n.deleted_at, n.created_at, n.updated_at,
      COALESCE((SELECT GROUP_CONCAT(nt.tag_id) FROM note_tags nt WHERE nt.note_id = n.id), '')";
 
 fn map_note_list_item(r: &rusqlite::Row) -> rusqlite::Result<NoteListItemDto> {
-    let tag_ids_raw: String = r.get(7)?;
+    let tag_ids_raw: String = r.get(8)?;
     Ok(NoteListItemDto {
         id: r.get(0)?,
         title: r.get(1)?,
@@ -177,7 +180,8 @@ fn map_note_list_item(r: &rusqlite::Row) -> rusqlite::Result<NoteListItemDto> {
         folder_id: r.get(3)?,
         is_pinned: r.get::<_, i64>(4)? != 0,
         deleted_at: r.get(5)?,
-        updated_at: r.get(6)?,
+        created_at: r.get(6)?,
+        updated_at: r.get(7)?,
         tag_ids: if tag_ids_raw.is_empty() {
             Vec::new()
         } else {
@@ -465,4 +469,20 @@ pub fn delete_folder(
     let notes_root = require_notes_root(&root_state)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     store::delete_folder(&conn, &notes_root, &id)
+}
+
+/// `color` of `None` clears back to the default (no tint).
+#[tauri::command]
+pub fn set_folder_color(
+    db_state: State<DbState>,
+    id: String,
+    color: Option<String>,
+) -> Result<(), String> {
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE folders SET color = ?1 WHERE id = ?2",
+        rusqlite::params![color, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }

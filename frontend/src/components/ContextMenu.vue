@@ -1,5 +1,13 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
+import Icon from "./icons/Icon.vue";
+
+export interface ContextMenuSwatch {
+  color: string | null;
+  label: string;
+  selected: boolean;
+  action: () => void;
+}
 
 export interface ContextMenuItem {
   label: string;
@@ -7,6 +15,10 @@ export interface ContextMenuItem {
   danger?: boolean;
   disabled?: boolean;
   separator?: boolean;
+  checked?: boolean;
+  // When set, this entry renders as a row of color swatches instead of a
+  // normal label/action button - label/action/checked are unused for it.
+  swatches?: ContextMenuSwatch[];
 }
 
 const props = defineProps<{
@@ -25,7 +37,11 @@ const style = ref({ left: `${props.x}px`, top: `${props.y}px` });
 let previouslyFocused: HTMLElement | null = null;
 
 function menuItemEls(): HTMLElement[] {
-  return Array.from(menuRef.value?.querySelectorAll<HTMLElement>(".menu-item:not(:disabled)") ?? []);
+  return Array.from(
+    menuRef.value?.querySelectorAll<HTMLElement>(
+      ".menu-item:not(:disabled), .menu-swatch",
+    ) ?? [],
+  );
 }
 
 onMounted(() => {
@@ -80,6 +96,25 @@ function run(item: ContextMenuItem) {
       <ul ref="menuRef" class="menu" role="menu" :style="style" @click.stop @contextmenu.stop.prevent>
         <template v-for="(item, i) in items" :key="i">
           <li v-if="item.separator" class="menu-separator" role="separator" />
+          <li v-else-if="item.swatches" class="menu-swatches" role="none">
+            <button
+              v-for="swatch in item.swatches"
+              :key="swatch.label"
+              class="menu-swatch"
+              role="menuitemradio"
+              :aria-checked="swatch.selected"
+              :aria-label="swatch.label"
+              :title="swatch.label"
+              :style="swatch.color ? { background: swatch.color } : undefined"
+              :class="{ 'menu-swatch--none': !swatch.color }"
+              @click="
+                swatch.action();
+                emit('close');
+              "
+            >
+              <Icon v-if="swatch.selected" name="check" />
+            </button>
+          </li>
           <li v-else role="none">
             <button
               class="menu-item"
@@ -88,6 +123,7 @@ function run(item: ContextMenuItem) {
               :disabled="item.disabled"
               @click="run(item)"
             >
+              <Icon v-if="item.checked" name="check" class="menu-item-check" />
               {{ item.label }}
             </button>
           </li>
@@ -150,5 +186,47 @@ function run(item: ContextMenuItem) {
   height: 1px;
   background: var(--border);
   margin: 4px 6px;
+}
+
+.menu-item-check {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.menu-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.menu-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.menu-swatch svg {
+  width: 12px;
+  height: 12px;
+}
+
+.menu-swatch--none {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.menu-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>

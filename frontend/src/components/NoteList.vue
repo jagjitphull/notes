@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   create: [];
   contextmenu: [event: MouseEvent, note: Note];
+  sortClick: [event: MouseEvent];
 }>();
 
 const selectedId = defineModel<string | null>("selectedId", { default: null });
@@ -66,6 +67,14 @@ function preview(note: Note): string {
   <section class="note-list" :aria-label="t('noteList.sectionLabel')">
     <div class="pane-header">
       <h2 class="list-title">{{ title }}</h2>
+      <button
+        class="icon-button sort-button"
+        :title="t('noteList.sort.label')"
+        :aria-label="t('noteList.sort.label')"
+        @click="emit('sortClick', $event)"
+      >
+        <Icon name="sort" />
+      </button>
       <button
         v-if="canCreate"
         class="icon-button new-note-button"
@@ -128,17 +137,18 @@ function preview(note: Note): string {
   overflow: hidden;
 }
 
-.pane-header {
-  justify-content: space-between;
-}
-
 .list-title {
+  flex: 1 1 auto;
   font-size: 20px;
   font-weight: 700;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-primary);
 }
 
+.sort-button,
 .new-note-button {
   flex: 0 0 auto;
 }

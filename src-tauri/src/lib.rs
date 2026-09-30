@@ -150,6 +150,7 @@ pub fn run() {
             commands::create_folder,
             commands::rename_folder,
             commands::delete_folder,
+            commands::set_folder_color,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

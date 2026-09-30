@@ -66,6 +66,13 @@ export const icons = {
     <rect x="4.5" y="2.5" width="11" height="15" rx="1.5" stroke-width="1.3" />
     <path d="M7 6.5h6M7 9.5h6M7 12.5h4" stroke-width="1.3" stroke-linecap="round" />
   `,
+  sort: `
+    <path d="M7 4v12M4.5 6.5 7 4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M13 16V4M10.5 13.5 13 16l2.5-2.5" stroke-linecap="round" stroke-linejoin="round" />
+  `,
+  check: `
+    <path d="M4.5 10.5 8 14l7.5-9" stroke-linecap="round" stroke-linejoin="round" />
+  `,
   // Editor toolbar - previously plain text glyphs ("B", "I", "H1", "•", ...)
   bold: `
     <path d="M6.5 4.5h4.3a2.6 2.6 0 0 1 0 5.2H6.5V4.5Z" fill="currentColor" stroke="none" />

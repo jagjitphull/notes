@@ -103,7 +103,11 @@ defineExpose({ focusSearch });
             @click="selectedId = folder.id"
             @contextmenu.prevent="emit('folderContextmenu', $event, folder)"
           >
-            <Icon class="nav-icon folder-icon" name="folder" />
+            <Icon
+              class="nav-icon folder-icon"
+              name="folder"
+              :style="folder.color ? { color: folder.color } : undefined"
+            />
             <span class="nav-label">{{ folder.name }}</span>
             <span class="nav-count">{{ folderCounts[folder.id] ?? 0 }}</span>
           </button>

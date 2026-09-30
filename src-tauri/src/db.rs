@@ -17,6 +17,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0003_smart_search_embeddings",
         include_str!("../migrations/0003_smart_search_embeddings.sql"),
     ),
+    (
+        "0004_folder_colors",
+        include_str!("../migrations/0004_folder_colors.sql"),
+    ),
 ];
 
 pub struct DbState(pub Mutex<Connection>);

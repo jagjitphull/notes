@@ -99,6 +99,9 @@
     },
     "noteLink": {
       "noMatches": "No matching notes"
+    },
+    "backlinks": {
+      "title": "Linked Mentions"
     }
   },
   "contextMenu": {

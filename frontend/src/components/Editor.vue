@@ -25,7 +25,7 @@ import {
   type FindMatch,
 } from "../tiptap/findReplace";
 import { exitSuggestion } from "@tiptap/suggestion";
-import { NoteLink } from "../tiptap/noteLink";
+import { extractLinkedTitles, NoteLink } from "../tiptap/noteLink";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
 // (same syntax Obsidian and others use), since tiptap-markdown has no
@@ -95,6 +95,21 @@ function handleNoteLinkNavigate(title: string) {
   const id = noteTitleIndex.value.get(title.trim().toLowerCase());
   if (id) emit("navigateToNote", id);
 }
+
+// "Linked Mentions": the reverse of the forward links above - other notes
+// whose saved body contains a [[This Note's Title]] link. Computed from
+// plaintextContent (already loaded for every note in the list, full body
+// past the title line - see note_file::extract_preview on the Rust side)
+// rather than a fetch per candidate note.
+const backlinks = computed(() => {
+  const title = props.note?.title.trim().toLowerCase();
+  if (!title) return [];
+  return linkTargets.value
+    .filter((n) =>
+      extractLinkedTitles(n.plaintextContent).some((t) => t.toLowerCase() === title),
+    )
+    .map((n) => ({ id: n.id, title: n.title.trim() || t("common.newNote") }));
+});
 
 const noteTagNames = computed(
   () =>
@@ -573,6 +588,18 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 
       <div class="editor-canvas">
         <EditorContent :editor="editor" class="editor-content" />
+
+        <div v-if="backlinks.length > 0" class="backlinks">
+          <h3 class="backlinks-title">{{ t('editor.backlinks.title') }}</h3>
+          <ul class="backlinks-list">
+            <li v-for="link in backlinks" :key="link.id">
+              <button class="backlink-item" @click="emit('navigateToNote', link.id)">
+                <Icon name="document" />
+                <span>{{ link.title }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
       </div>
     </template>
 
@@ -935,6 +962,54 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 .editor-content :deep(.ProseMirror img) {
   max-width: 100%;
   border-radius: 6px;
+}
+
+.backlinks {
+  margin-top: 32px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.backlinks-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  margin: 0 0 4px;
+}
+
+.backlinks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.backlink-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.backlink-item:hover {
+  background: var(--bg-hover);
+}
+
+.backlink-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  flex: 0 0 auto;
 }
 
 .empty-editor {

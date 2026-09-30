@@ -45,6 +45,21 @@ export interface NoteLinkOptions {
   onNavigate: (title: string) => void;
 }
 
+// Pulls every [[Title]] out of a note's raw markdown/plaintext (not the
+// live editor) - used to compute backlinks from `note.plaintextContent`,
+// which already holds each note's full saved body without a per-note
+// fetch. Matches the same literal syntax the markdown-it rule above
+// parses, so a title found here is exactly what that rule would turn
+// into a link on that note's own next parse.
+export function extractLinkedTitles(text: string): string[] {
+  const titles: string[] = [];
+  for (const match of text.matchAll(/\[\[([^[\]]+)\]\]/g)) {
+    const title = match[1].trim();
+    if (title) titles.push(title);
+  }
+  return titles;
+}
+
 export const NoteLink = Node.create<NoteLinkOptions>({
   name: "noteLink",
   group: "inline",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/vue-3";
@@ -14,6 +14,16 @@ import markdownItMark from "markdown-it-mark";
 import Icon from "./icons/Icon.vue";
 import type { IconName } from "./icons/icons";
 import type { Folder, Note, Tag } from "../types";
+import {
+  clearHighlights,
+  findMatches,
+  FindReplace,
+  highlightMatches,
+  replaceAllMatches,
+  replaceMatch,
+  scrollToMatch,
+  type FindMatch,
+} from "../tiptap/findReplace";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
 // (same syntax Obsidian and others use), since tiptap-markdown has no
@@ -76,6 +86,7 @@ const editor = useEditor({
     // switching to another note and back).
     Image.configure({ allowBase64: true }),
     Highlight,
+    FindReplace,
     Markdown.configure({
       html: false,
       tightLists: true,
@@ -149,6 +160,10 @@ const editor = useEditor({
   onUpdate({ editor }) {
     body.value = editor.storage.markdown.getMarkdown();
     convertBlobImages(editor);
+    // Keeps hit-highlighting and the match count correct through edits
+    // made while the find bar is open (typing in the note, or a
+    // replace/replace-all this same component just performed).
+    if (findOpen.value) refreshMatches();
   },
 });
 
@@ -225,7 +240,103 @@ async function focusEditor() {
   editor.value?.commands.focus("end");
 }
 
-defineExpose({ focusEditor });
+const findOpen = ref(false);
+const findQuery = ref("");
+const replaceQuery = ref("");
+const caseSensitive = ref(false);
+const matches = ref<FindMatch[]>([]);
+const currentMatchIndex = ref(-1);
+const findInputRef = ref<HTMLInputElement | null>(null);
+
+function scrollToCurrentMatch() {
+  const e = editor.value;
+  const match = matches.value[currentMatchIndex.value];
+  if (e && match) scrollToMatch(e, match);
+}
+
+// Re-runs the search from scratch: the only path that's correct after the
+// document itself changed (typing, a replace this component just made).
+// Navigation (next/prev) doesn't need this - see setCurrentMatch below.
+function refreshMatches(desiredIndex = currentMatchIndex.value) {
+  const e = editor.value;
+  if (!e) return;
+  matches.value = findMatches(e, findQuery.value, caseSensitive.value);
+  currentMatchIndex.value =
+    matches.value.length === 0 ? -1 : Math.min(Math.max(desiredIndex, 0), matches.value.length - 1);
+  highlightMatches(e, matches.value, currentMatchIndex.value);
+  scrollToCurrentMatch();
+}
+
+function setCurrentMatch(index: number) {
+  const e = editor.value;
+  if (!e || matches.value.length === 0) return;
+  currentMatchIndex.value = ((index % matches.value.length) + matches.value.length) % matches.value.length;
+  highlightMatches(e, matches.value, currentMatchIndex.value);
+  scrollToCurrentMatch();
+}
+
+function goToNextMatch() {
+  setCurrentMatch(currentMatchIndex.value + 1);
+}
+
+function goToPreviousMatch() {
+  setCurrentMatch(currentMatchIndex.value - 1);
+}
+
+async function openFind() {
+  findOpen.value = true;
+  refreshMatches(0);
+  await nextTick();
+  findInputRef.value?.focus();
+  findInputRef.value?.select();
+}
+
+function closeFind({ refocus = true } = {}) {
+  findOpen.value = false;
+  matches.value = [];
+  currentMatchIndex.value = -1;
+  if (editor.value) clearHighlights(editor.value);
+  if (refocus) editor.value?.commands.focus();
+}
+
+function replaceCurrent() {
+  const e = editor.value;
+  const match = matches.value[currentMatchIndex.value];
+  if (!e || !match || isDeleted.value) return;
+  replaceMatch(e, match, replaceQuery.value);
+  // onUpdate refreshes matches/highlights for us (findOpen is true).
+}
+
+function replaceAll() {
+  const e = editor.value;
+  if (!e || matches.value.length === 0 || isDeleted.value) return;
+  replaceAllMatches(e, matches.value, replaceQuery.value);
+}
+
+watch([findQuery, caseSensitive], () => {
+  if (findOpen.value) refreshMatches(0);
+});
+
+// Switching notes leaves findQuery/caseSensitive as-is (reopening Find on
+// the new note keeps the last search term, like a browser's find bar) but
+// drops the match list and highlights, which point at the old note's text.
+watch(
+  () => props.note?.id,
+  () => {
+    if (findOpen.value) closeFind({ refocus: false });
+  },
+);
+
+const matchCountLabel = computed(() => {
+  if (!findQuery.value) return "";
+  if (matches.value.length === 0) return t("editor.find.noResults");
+  return t("editor.find.matchCount", {
+    current: currentMatchIndex.value + 1,
+    total: matches.value.length,
+  });
+});
+
+defineExpose({ focusEditor, openFind });
 
 const folderName = computed(
   () => props.folders.find((f) => f.id === props.note?.folderId)?.name ?? "",
@@ -290,6 +401,16 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           <span class="editor-meta">{{ formattedDate }} &middot; {{ folderName }}</span>
           <button
             class="icon-button"
+            :class="{ active: findOpen }"
+            :title="t('editor.find.openFind')"
+            :aria-label="t('editor.find.openFind')"
+            :aria-pressed="findOpen"
+            @click="findOpen ? closeFind() : openFind()"
+          >
+            <Icon name="search" />
+          </button>
+          <button
+            class="icon-button"
             :class="{ active: note.isPinned }"
             :title="note.isPinned ? t('common.unpin') : t('common.pin')"
             :aria-label="note.isPinned ? t('common.unpin') : t('common.pin')"
@@ -308,6 +429,80 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             <Icon :name="isDeleted ? 'restore' : 'trash'" />
           </button>
         </div>
+      </div>
+
+      <div v-if="findOpen" class="find-bar" role="search" :aria-label="t('editor.find.openFind')">
+        <input
+          ref="findInputRef"
+          v-model="findQuery"
+          type="text"
+          class="find-input"
+          :placeholder="t('editor.find.findPlaceholder')"
+          @keydown.enter.exact.prevent="goToNextMatch"
+          @keydown.enter.shift.exact.prevent="goToPreviousMatch"
+          @keydown.escape.prevent="closeFind()"
+        />
+        <span class="find-count">{{ matchCountLabel }}</span>
+        <button
+          class="icon-button"
+          :disabled="matches.length === 0"
+          :title="t('editor.find.previous')"
+          :aria-label="t('editor.find.previous')"
+          @click="goToPreviousMatch"
+        >
+          <Icon name="chevronUp" />
+        </button>
+        <button
+          class="icon-button"
+          :disabled="matches.length === 0"
+          :title="t('editor.find.next')"
+          :aria-label="t('editor.find.next')"
+          @click="goToNextMatch"
+        >
+          <Icon name="chevronDown" />
+        </button>
+        <button
+          class="find-case-toggle"
+          :class="{ active: caseSensitive }"
+          type="button"
+          :title="t('editor.find.caseSensitive')"
+          :aria-label="t('editor.find.caseSensitive')"
+          :aria-pressed="caseSensitive"
+          @click="caseSensitive = !caseSensitive"
+        >
+          Aa
+        </button>
+        <input
+          v-model="replaceQuery"
+          type="text"
+          class="find-input"
+          :disabled="isDeleted"
+          :placeholder="t('editor.find.replacePlaceholder')"
+          @keydown.enter.exact.prevent="replaceCurrent"
+          @keydown.escape.prevent="closeFind()"
+        />
+        <button
+          class="find-text-button"
+          :disabled="matches.length === 0 || isDeleted"
+          @click="replaceCurrent"
+        >
+          {{ t('editor.find.replace') }}
+        </button>
+        <button
+          class="find-text-button"
+          :disabled="matches.length === 0 || isDeleted"
+          @click="replaceAll"
+        >
+          {{ t('editor.find.replaceAll') }}
+        </button>
+        <button
+          class="icon-button"
+          :title="t('common.close')"
+          :aria-label="t('common.close')"
+          @click="closeFind()"
+        >
+          <Icon name="close" />
+        </button>
       </div>
 
       <div v-if="!isDeleted" class="tags-row">
@@ -413,6 +608,90 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   color: var(--text-secondary);
   white-space: nowrap;
   margin-right: 4px;
+}
+
+.find-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.find-input {
+  flex: 1 1 120px;
+  min-width: 90px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.find-input:disabled {
+  opacity: 0.5;
+}
+
+.find-input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -1px;
+}
+
+.find-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  min-width: 56px;
+  text-align: center;
+}
+
+.find-case-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.find-case-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.find-case-toggle.active {
+  background: var(--bg-selected);
+  color: var(--accent-blue-text);
+}
+
+.find-text-button {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.find-text-button:hover:not(:disabled) {
+  background: var(--bg-selected);
+}
+
+.find-text-button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .tags-row {
@@ -587,6 +866,21 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   color: #1c1c1e;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* Find results: pale yellow for every hit, a stronger orange ring on
+   whichever one is "current" - same convention browsers use for their
+   own in-page find, and visually distinct from the ==highlight== mark
+   above despite the shared yellow family. */
+.editor-content :deep(.find-match) {
+  background: rgba(242, 183, 5, 0.35);
+  border-radius: 2px;
+}
+
+.editor-content :deep(.find-match-current) {
+  background: rgba(255, 149, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 149, 0, 0.9);
+  border-radius: 2px;
 }
 
 .editor-content :deep(.ProseMirror img) {

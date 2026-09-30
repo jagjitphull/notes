@@ -5,6 +5,7 @@
     "pin": "Pin",
     "unpin": "Unpin",
     "cancel": "Cancel",
+    "close": "Close",
     "ok": "OK",
     "create": "Create",
     "rename": "Rename",
@@ -79,6 +80,18 @@
       "numberedList": "Numbered List",
       "codeBlock": "Code Block",
       "quote": "Quote"
+    },
+    "find": {
+      "openFind": "Find in Note",
+      "findPlaceholder": "Find",
+      "replacePlaceholder": "Replace",
+      "previous": "Previous Match",
+      "next": "Next Match",
+      "caseSensitive": "Match Case",
+      "replace": "Replace",
+      "replaceAll": "Replace All",
+      "matchCount": "{current}/{total}",
+      "noResults": "No results"
     }
   },
   "contextMenu": {

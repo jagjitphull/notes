@@ -515,6 +515,14 @@ function isTypingContext(): boolean {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
 }
 
+// Ctrl/Cmd+F is contextual: from anywhere in the editor pane (the content
+// itself, its toolbar, the find bar) it means "find in this note"; from
+// everywhere else (sidebar, note list) it means the existing global search.
+function isEditorFocused(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  return !!el?.closest(".editor");
+}
+
 function navigateList(direction: number) {
   const list = filteredNotes.value;
   if (list.length === 0) return;
@@ -541,6 +549,10 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
   if (mod && e.key.toLowerCase() === "f") {
     e.preventDefault();
+    if (selectedNote.value && isEditorFocused()) {
+      editorRef.value?.openFind();
+      return;
+    }
     if (sidebarCollapsed.value) {
       sidebarCollapsed.value = false;
       nextTick(() => sidebarRef.value?.focusSearch());

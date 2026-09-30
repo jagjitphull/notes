@@ -332,6 +332,14 @@ async function onToggleDeleted() {
   await refreshData();
 }
 
+// Switches to "All Notes" so the target is visible/highlighted in the list
+// regardless of which folder or tag was previously selected - a [[link]]
+// can point anywhere, not just within the current scope.
+function onNavigateToNote(id: string) {
+  selectedId.value = "all";
+  selectedNoteId.value = id;
+}
+
 function onAddTag() {
   if (!selectedNote.value) return;
   const noteId = selectedNote.value.id;
@@ -677,12 +685,14 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:body="editingBody"
         style="grid-column: 5"
         :note="selectedNote"
+        :notes="notes"
         :folders="folders"
         :tags="tags"
         @toggle-pin="onTogglePin"
         @toggle-deleted="onToggleDeleted"
         @add-tag="onAddTag"
         @remove-tag="onRemoveTag"
+        @navigate-to-note="onNavigateToNote"
       />
     </div>
 

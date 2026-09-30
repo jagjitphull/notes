@@ -24,6 +24,8 @@ import {
   scrollToMatch,
   type FindMatch,
 } from "../tiptap/findReplace";
+import { exitSuggestion } from "@tiptap/suggestion";
+import { NoteLink } from "../tiptap/noteLink";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
 // (same syntax Obsidian and others use), since tiptap-markdown has no
@@ -45,6 +47,7 @@ const Highlight = HighlightBase.extend({
 
 const props = defineProps<{
   note: Note | null;
+  notes: Note[];
   folders: Folder[];
   tags: Tag[];
 }>();
@@ -54,7 +57,44 @@ const emit = defineEmits<{
   toggleDeleted: [];
   addTag: [];
   removeTag: [name: string];
+  navigateToNote: [id: string];
 }>();
+
+// Other notes this one can link to via [[Title]] - excludes the current
+// note (linking to itself isn't useful) and trashed notes (nothing to
+// navigate to). Keyed by lowercased title since links resolve by title,
+// not id: renaming a note breaks links elsewhere that pointed at its old
+// title, rather than tracking renames - see tiptap/noteLink.ts.
+const linkTargets = computed(() =>
+  props.notes.filter((n) => !n.deletedAt && n.id !== props.note?.id),
+);
+
+const noteTitleIndex = computed(() => {
+  const map = new Map<string, string>();
+  for (const n of linkTargets.value) {
+    const key = n.title.trim().toLowerCase();
+    if (key && !map.has(key)) map.set(key, n.id);
+  }
+  return map;
+});
+
+const suggestionTitles = computed(() => {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const n of linkTargets.value) {
+    const trimmed = n.title.trim();
+    const key = trimmed.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    titles.push(trimmed);
+  }
+  return titles;
+});
+
+function handleNoteLinkNavigate(title: string) {
+  const id = noteTitleIndex.value.get(title.trim().toLowerCase());
+  if (id) emit("navigateToNote", id);
+}
 
 const noteTagNames = computed(
   () =>
@@ -87,6 +127,11 @@ const editor = useEditor({
     Image.configure({ allowBase64: true }),
     Highlight,
     FindReplace,
+    NoteLink.configure({
+      getNoteTitles: () => suggestionTitles.value,
+      isResolved: (title) => noteTitleIndex.value.has(title.trim().toLowerCase()),
+      onNavigate: handleNoteLinkNavigate,
+    }),
     Markdown.configure({
       html: false,
       tightLists: true,
@@ -219,6 +264,10 @@ watch(body, (value) => {
   if (!editor.value) return;
   if (value !== editor.value.storage.markdown.getMarkdown()) {
     editor.value.commands.setContent(value, { emitUpdate: false });
+    // A note-linking autocomplete popup left open (e.g. the user switched
+    // notes via the sidebar instead of dismissing it) would otherwise keep
+    // floating over content it no longer applies to.
+    exitSuggestion(editor.value.view);
   }
 });
 

@@ -92,6 +92,9 @@
       "replaceAll": "Replace All",
       "matchCount": "{current}/{total}",
       "noResults": "No results"
+    },
+    "noteLink": {
+      "noMatches": "No matching notes"
     }
   },
   "contextMenu": {

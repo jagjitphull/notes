@@ -82,6 +82,17 @@ export const icons = {
   chevronDown: `
     <path d="M5.5 7.5 10 12l4.5-4.5" stroke-linecap="round" stroke-linejoin="round" />
   `,
+  // Custom title bar (native window decorations are off - see App.vue).
+  windowMinimize: `
+    <path d="M5.5 13.5h9" stroke-linecap="round" />
+  `,
+  windowMaximize: `
+    <rect x="5.25" y="5.25" width="9.5" height="9.5" rx="1.25" stroke-width="1.4" />
+  `,
+  windowRestore: `
+    <path d="M7.75 6.75h6.5v6.5" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4" />
+    <rect x="4.75" y="7.75" width="7.5" height="7.5" rx="1.1" stroke-width="1.4" />
+  `,
   // Editor toolbar - previously plain text glyphs ("B", "I", "H1", "•", ...)
   bold: `
     <path d="M6.5 4.5h4.3a2.6 2.6 0 0 1 0 5.2H6.5V4.5Z" fill="currentColor" stroke="none" />

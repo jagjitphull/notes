@@ -34,6 +34,7 @@ import {
 import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import { useSortPreference } from "./composables/useSortPreference";
+import { useWindowControls } from "./composables/useWindowControls";
 import type { Folder, Note, Tag } from "./types";
 
 // A fixed accent palette (matching the system-color style Apple Notes/
@@ -76,6 +77,12 @@ const {
   checkForUpdate,
   installUpdate,
 } = useAppUpdater();
+const {
+  isMaximized,
+  minimize: minimizeWindow,
+  toggleMaximize: toggleMaximizeWindow,
+  close: closeWindow,
+} = useWindowControls();
 
 const loading = ref(true);
 const notesRoot = ref<string | null>(null);
@@ -584,38 +591,69 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   <FirstRunSetup v-if="!loading && !notesRoot" @ready="onSetupReady" />
 
   <div v-else-if="!loading" class="app-root">
-    <div class="top-bar">
-      <button
-        class="pane-toggle"
-        :class="{ active: !sidebarCollapsed }"
-        :title="t('topBar.toggleSidebar')"
-        :aria-label="t('topBar.toggleSidebar')"
-        :aria-pressed="!sidebarCollapsed"
-        @click="sidebarCollapsed = !sidebarCollapsed"
-      >
-        <Icon name="panelLeft" />
-      </button>
-      <button
-        class="pane-toggle"
-        :class="{ active: !listCollapsed }"
-        :title="t('topBar.toggleNoteList')"
-        :aria-label="t('topBar.toggleNoteList')"
-        :aria-pressed="!listCollapsed"
-        @click="listCollapsed = !listCollapsed"
-      >
-        <Icon name="panelList" />
-      </button>
+    <div class="top-bar" data-tauri-drag-region="deep">
+      <div class="top-bar-start">
+        <button
+          class="pane-toggle"
+          :class="{ active: !sidebarCollapsed }"
+          :title="t('topBar.toggleSidebar')"
+          :aria-label="t('topBar.toggleSidebar')"
+          :aria-pressed="!sidebarCollapsed"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
+          <Icon name="panelLeft" />
+        </button>
+        <button
+          class="pane-toggle"
+          :class="{ active: !listCollapsed }"
+          :title="t('topBar.toggleNoteList')"
+          :aria-label="t('topBar.toggleNoteList')"
+          :aria-pressed="!listCollapsed"
+          @click="listCollapsed = !listCollapsed"
+        >
+          <Icon name="panelList" />
+        </button>
+      </div>
 
-      <button
-        v-if="updateAvailable"
-        class="update-available"
-        :disabled="updateInstalling"
-        :title="t('topBar.installUpdate', { version: updateVersion })"
-        @click="installUpdate"
-      >
-        <Icon name="download" />
-        <span>{{ updateInstalling ? t('topBar.installing') : t('topBar.updateTo', { version: updateVersion }) }}</span>
-      </button>
+      <div class="top-bar-end">
+        <button
+          v-if="updateAvailable"
+          class="update-available"
+          :disabled="updateInstalling"
+          :title="t('topBar.installUpdate', { version: updateVersion })"
+          @click="installUpdate"
+        >
+          <Icon name="download" />
+          <span>{{ updateInstalling ? t('topBar.installing') : t('topBar.updateTo', { version: updateVersion }) }}</span>
+        </button>
+
+        <div class="window-controls">
+          <button
+            class="window-control-button"
+            :title="t('topBar.minimize')"
+            :aria-label="t('topBar.minimize')"
+            @click="minimizeWindow"
+          >
+            <Icon name="windowMinimize" />
+          </button>
+          <button
+            class="window-control-button"
+            :title="isMaximized ? t('topBar.restore') : t('topBar.maximize')"
+            :aria-label="isMaximized ? t('topBar.restore') : t('topBar.maximize')"
+            @click="toggleMaximizeWindow"
+          >
+            <Icon :name="isMaximized ? 'windowRestore' : 'windowMaximize'" />
+          </button>
+          <button
+            class="window-control-button window-control-close"
+            :title="t('topBar.close')"
+            :aria-label="t('topBar.close')"
+            @click="closeWindow"
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="app-shell" :style="{ gridTemplateColumns }">
@@ -727,10 +765,22 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 5px 8px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 5px 5px 8px;
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
+  /* A native-feeling drag handle needs some height to grab - the row's
+     content alone (26px buttons) reads as too thin a target. */
+  min-height: 38px;
+  box-sizing: border-box;
+}
+
+.top-bar-start,
+.top-bar-end {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .pane-toggle {
@@ -755,7 +805,6 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   padding: 5px 10px 5px 8px;
   border: none;
   border-radius: 999px;
@@ -790,6 +839,48 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 .pane-toggle svg {
   width: 16px;
   height: 16px;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.window-control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.window-control-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.window-control-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.window-control-button:active {
+  filter: brightness(0.92);
+}
+
+.window-control-close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 .app-shell {

@@ -123,6 +123,14 @@ pub fn run() {
                         let _ = window_handle.hide();
                     }
                 });
+
+                // Some window managers don't apply tauri.conf.json's
+                // configured size to an undecorated window (decorations are
+                // off - App.vue draws its own title bar) until a real
+                // resize happens; forcing one here on startup is a no-op
+                // where the configured size already took, and the fix
+                // where it didn't.
+                let _ = window.set_size(tauri::LogicalSize::new(1200.0, 800.0));
             }
 
             Ok(())

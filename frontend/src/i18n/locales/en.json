@@ -22,7 +22,11 @@
     "toggleNoteList": "Toggle Note List",
     "installUpdate": "Install v{version} and restart",
     "installing": "Installing…",
-    "updateTo": "Update to v{version}"
+    "updateTo": "Update to v{version}",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close Window"
   },
   "resize": {
     "sidebar": "Resize sidebar",

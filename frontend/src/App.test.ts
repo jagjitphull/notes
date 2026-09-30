@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 
-const { listenMock, apiMocks } = vi.hoisted(() => {
+const { listenMock, apiMocks, windowMock } = vi.hoisted(() => {
   const apiMocks = {
     getNotesRoot: vi.fn(),
     listFolders: vi.fn(),
@@ -23,10 +23,18 @@ const { listenMock, apiMocks } = vi.hoisted(() => {
     addNoteTag: vi.fn(),
     removeNoteTag: vi.fn(),
   };
-  return { listenMock: vi.fn().mockResolvedValue(() => {}), apiMocks };
+  const windowMock = {
+    isMaximized: vi.fn().mockResolvedValue(false),
+    onResized: vi.fn().mockResolvedValue(() => {}),
+    minimize: vi.fn(),
+    toggleMaximize: vi.fn(),
+    close: vi.fn(),
+  };
+  return { listenMock: vi.fn().mockResolvedValue(() => {}), apiMocks, windowMock };
 });
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => windowMock }));
 vi.mock("./api", () => apiMocks);
 
 const App = (await import("./App.vue")).default;

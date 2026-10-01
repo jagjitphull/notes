@@ -777,12 +777,6 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 48px 0;
-  /* A fixed 760px read fine at the app's default size but left wide,
-     empty margins either side once the window is maximized - this still
-     caps line length for readability, just lets it grow with the pane
-     instead of staying pinned to that one width. */
-  max-width: clamp(760px, 85%, 1000px);
-  margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
 }
@@ -840,11 +834,13 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
      would just grow the box instead of scrolling within it. */
   min-height: 0;
   overflow-y: auto;
+  /* No max-width/centering: a capped column (even a generous one) still
+     reads as wasted space once the pane is wide, per direct feedback.
+     Content now spans the same width as the toolbar above it - just this
+     padding on either side, at any pane width. */
   padding: 16px 48px 48px;
-  /* See .tags-row above - same widening, same reasoning. */
-  max-width: clamp(760px, 85%, 1000px);
-  margin: 0 auto;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .editor-content :deep(.ProseMirror) {

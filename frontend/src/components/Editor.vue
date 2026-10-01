@@ -777,7 +777,11 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 48px 0;
-  max-width: 760px;
+  /* A fixed 760px read fine at the app's default size but left wide,
+     empty margins either side once the window is maximized - this still
+     caps line length for readability, just lets it grow with the pane
+     instead of staying pinned to that one width. */
+  max-width: clamp(760px, 85%, 1000px);
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -837,7 +841,8 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 16px 48px 48px;
-  max-width: 760px;
+  /* See .tags-row above - same widening, same reasoning. */
+  max-width: clamp(760px, 85%, 1000px);
   margin: 0 auto;
   width: 100%;
 }

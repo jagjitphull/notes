@@ -69,6 +69,10 @@ const {
   listCollapsed,
   sidebarWidth,
   listWidth,
+  focusMode,
+  toggleFocusMode,
+  sidebarVisible,
+  listVisible,
   gridTemplateColumns,
   startResize,
   stepResize,
@@ -672,6 +676,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
     return;
   }
 
+  if (mod && e.key === ".") {
+    e.preventDefault();
+    toggleFocusMode();
+    return;
+  }
+
   if (!mod && (e.key === "ArrowDown" || e.key === "ArrowUp") && !isTypingContext()) {
     e.preventDefault();
     navigateList(e.key === "ArrowDown" ? 1 : -1);
@@ -707,6 +717,16 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
           @click="listCollapsed = !listCollapsed"
         >
           <Icon name="panelList" />
+        </button>
+        <button
+          class="pane-toggle"
+          :class="{ active: focusMode }"
+          :title="t('topBar.toggleFocusMode')"
+          :aria-label="t('topBar.toggleFocusMode')"
+          :aria-pressed="focusMode"
+          @click="toggleFocusMode"
+        >
+          <Icon name="focus" />
         </button>
       </div>
 
@@ -753,7 +773,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 
     <div class="app-shell" :style="{ gridTemplateColumns }">
       <Sidebar
-        v-if="!sidebarCollapsed"
+        v-if="sidebarVisible"
         ref="sidebarRef"
         v-model:selected-id="selectedId"
         v-model:search-query="searchQuery"
@@ -771,7 +791,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @tag-contextmenu="onTagContextmenu"
       />
       <div
-        v-if="!sidebarCollapsed"
+        v-if="sidebarVisible"
         class="resize-handle"
         style="grid-column: 2"
         role="separator"
@@ -787,7 +807,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       />
 
       <NoteList
-        v-if="!listCollapsed"
+        v-if="listVisible"
         v-model:selected-id="selectedNoteId"
         style="grid-column: 3"
         :notes="filteredNotes"
@@ -802,7 +822,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @sort-click="onSortClick"
       />
       <div
-        v-if="!listCollapsed"
+        v-if="listVisible"
         class="resize-handle"
         style="grid-column: 4"
         role="separator"

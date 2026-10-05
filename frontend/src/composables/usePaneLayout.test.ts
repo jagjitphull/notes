@@ -54,6 +54,38 @@ describe("usePaneLayout", () => {
     expect(localStorage.getItem("notes-sidebar-width")).toBe("400");
   });
 
+  it("focus mode hides both panes without touching their own collapsed state", () => {
+    const { sidebarCollapsed, listCollapsed, focusMode, toggleFocusMode, sidebarVisible, listVisible, gridTemplateColumns } =
+      usePaneLayout();
+    expect(sidebarVisible.value).toBe(true);
+    expect(listVisible.value).toBe(true);
+
+    toggleFocusMode();
+    expect(focusMode.value).toBe(true);
+    expect(sidebarVisible.value).toBe(false);
+    expect(listVisible.value).toBe(false);
+    expect(gridTemplateColumns.value).toBe("0px 0px 0px 0px 1fr");
+    // The user's own collapsed preference is untouched by focus mode.
+    expect(sidebarCollapsed.value).toBe(false);
+    expect(listCollapsed.value).toBe(false);
+
+    toggleFocusMode();
+    expect(focusMode.value).toBe(false);
+    expect(sidebarVisible.value).toBe(true);
+    expect(listVisible.value).toBe(true);
+  });
+
+  it("a pane the user collapsed stays hidden even after leaving focus mode", () => {
+    const { sidebarCollapsed, toggleFocusMode, sidebarVisible } = usePaneLayout();
+    sidebarCollapsed.value = true;
+    expect(sidebarVisible.value).toBe(false);
+
+    toggleFocusMode();
+    expect(sidebarVisible.value).toBe(false);
+    toggleFocusMode();
+    expect(sidebarVisible.value).toBe(false); // still collapsed, not re-shown
+  });
+
   it("dragging the list handle only ever affects the list width", () => {
     const { sidebarWidth, listWidth, startResize } = usePaneLayout();
     startResize("list", { clientX: 0, preventDefault: () => {} } as unknown as PointerEvent);

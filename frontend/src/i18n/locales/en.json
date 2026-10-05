@@ -21,6 +21,7 @@
   "topBar": {
     "toggleSidebar": "Toggle Sidebar",
     "toggleNoteList": "Toggle Note List",
+    "toggleFocusMode": "Toggle Focus Mode",
     "installUpdate": "Install v{version} and restart",
     "installing": "Installing…",
     "updateTo": "Update to v{version}",

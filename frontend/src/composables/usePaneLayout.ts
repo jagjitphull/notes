@@ -26,17 +26,31 @@ export function usePaneLayout() {
   const listWidth = ref(persistedNumber("notes-list-width", LIST_DEFAULT));
   const sidebarCollapsed = ref(persistedBool("notes-sidebar-collapsed"));
   const listCollapsed = ref(persistedBool("notes-list-collapsed"));
+  // Deliberately not persisted - a momentary "hide the chrome while I
+  // write" toggle, not a layout preference; reopening the app should show
+  // the normal layout rather than surprise the user with hidden panes.
+  const focusMode = ref(false);
 
   watch(sidebarWidth, (w) => localStorage.setItem("notes-sidebar-width", String(w)));
   watch(listWidth, (w) => localStorage.setItem("notes-list-width", String(w)));
   watch(sidebarCollapsed, (v) => localStorage.setItem("notes-sidebar-collapsed", String(v)));
   watch(listCollapsed, (v) => localStorage.setItem("notes-list-collapsed", String(v)));
 
+  // What's actually shown right now - collapsed-by-the-user OR hidden by
+  // focus mode, without focus mode touching (and overwriting on toggle
+  // back off) the user's own persisted collapsed preference.
+  const sidebarVisible = computed(() => !sidebarCollapsed.value && !focusMode.value);
+  const listVisible = computed(() => !listCollapsed.value && !focusMode.value);
+
+  function toggleFocusMode() {
+    focusMode.value = !focusMode.value;
+  }
+
   const gridTemplateColumns = computed(() => {
-    const sidebar = sidebarCollapsed.value ? "0px" : `${sidebarWidth.value}px`;
-    const sidebarHandle = sidebarCollapsed.value ? "0px" : "6px";
-    const list = listCollapsed.value ? "0px" : `${listWidth.value}px`;
-    const listHandle = listCollapsed.value ? "0px" : "6px";
+    const sidebar = sidebarVisible.value ? `${sidebarWidth.value}px` : "0px";
+    const sidebarHandle = sidebarVisible.value ? "6px" : "0px";
+    const list = listVisible.value ? `${listWidth.value}px` : "0px";
+    const listHandle = listVisible.value ? "6px" : "0px";
     return `${sidebar} ${sidebarHandle} ${list} ${listHandle} 1fr`;
   });
 
@@ -90,6 +104,10 @@ export function usePaneLayout() {
     listWidth,
     sidebarCollapsed,
     listCollapsed,
+    focusMode,
+    toggleFocusMode,
+    sidebarVisible,
+    listVisible,
     gridTemplateColumns,
     startResize,
     stepResize,

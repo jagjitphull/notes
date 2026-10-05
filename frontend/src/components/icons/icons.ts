@@ -55,6 +55,9 @@ export const icons = {
     <rect x="3" y="4" width="14" height="12" rx="2" />
     <path d="M6.5 7.5h7M6.5 10h7M6.5 12.5h4.5" stroke-linecap="round" />
   `,
+  focus: `
+    <path d="M3 7.5V5a2 2 0 0 1 2-2h2.5M14.5 3H17a2 2 0 0 1 2 2v2.5M19 12.5V15a2 2 0 0 1-2 2h-2.5M7.5 17H5a2 2 0 0 1-2-2v-2.5" stroke-linecap="round" stroke-linejoin="round" />
+  `,
   download: `
     <path d="M10 3v10M6 9.5 10 13.5 14 9.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M4 16.5h12" stroke-width="1.6" stroke-linecap="round" />

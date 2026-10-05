@@ -155,6 +155,26 @@ export const icons = {
     <path d="M4.5 4v12" stroke-width="2.2" stroke-linecap="round" />
     <path d="M8 6.5h9M8 10h9M8 13.5h6" stroke-linecap="round" />
   `,
+  table: `
+    <rect x="3" y="4" width="14" height="12" rx="1.3" stroke-width="1.3" />
+    <path d="M3 8.3h14M3 12.7h14M8.3 4v12M12.7 4v12" stroke-width="1" />
+  `,
+  tableRowPlus: `
+    <path d="M3.5 5.5h13M3.5 10h13" stroke-linecap="round" stroke-width="1.4" />
+    <path d="M10 13v5M7.5 15.5h5" stroke-linecap="round" stroke-width="1.6" />
+  `,
+  tableRowMinus: `
+    <path d="M3.5 5.5h13M3.5 10h13" stroke-linecap="round" stroke-width="1.4" />
+    <path d="M7.5 15.5h5" stroke-linecap="round" stroke-width="1.6" />
+  `,
+  tableColumnPlus: `
+    <path d="M4 3.5v13M9 3.5v13" stroke-linecap="round" stroke-width="1.4" />
+    <path d="M14.5 7v6M11.5 10h6" stroke-linecap="round" stroke-width="1.6" />
+  `,
+  tableColumnMinus: `
+    <path d="M4 3.5v13M9 3.5v13" stroke-linecap="round" stroke-width="1.4" />
+    <path d="M11.5 10h6" stroke-linecap="round" stroke-width="1.6" />
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

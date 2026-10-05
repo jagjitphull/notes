@@ -8,6 +8,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
+import { TableKit } from "@tiptap/extension-table";
 import HighlightBase from "@tiptap/extension-highlight";
 import { Markdown } from "tiptap-markdown";
 import markdownItMark from "markdown-it-mark";
@@ -151,6 +152,7 @@ const editor = useEditor({
       onNavigate: handleNoteLinkNavigate,
     }),
     FileAttachment,
+    TableKit.configure({ table: { resizable: false } }),
     Markdown.configure({
       html: false,
       tightLists: true,
@@ -470,6 +472,28 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
     { label: t("editor.toolbar.numberedList"), icon: "numberedList", isActive: () => e.isActive("orderedList"), run: () => chain().toggleOrderedList().run() },
     { label: t("editor.toolbar.codeBlock"), icon: "code", isActive: () => e.isActive("codeBlock"), run: () => chain().toggleCodeBlock().run() },
     { label: t("editor.toolbar.quote"), icon: "quote", isActive: () => e.isActive("blockquote"), run: () => chain().toggleBlockquote().run() },
+    {
+      label: t("editor.toolbar.insertTable"),
+      icon: "table",
+      isActive: () => e.isActive("table"),
+      run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    },
+  ];
+});
+
+// Row/column editing only makes sense with the cursor inside a table, so
+// these are a separate, conditionally-shown group rather than always-on
+// buttons that would mostly just error or no-op.
+const tableEditActions = computed<ToolbarAction[]>(() => {
+  const e = editor.value;
+  if (!e || !e.isActive("table")) return [];
+  const chain = () => e.chain().focus();
+  return [
+    { label: t("editor.toolbar.addRow"), icon: "tableRowPlus", isActive: () => false, run: () => chain().addRowAfter().run() },
+    { label: t("editor.toolbar.deleteRow"), icon: "tableRowMinus", isActive: () => false, run: () => chain().deleteRow().run() },
+    { label: t("editor.toolbar.addColumn"), icon: "tableColumnPlus", isActive: () => false, run: () => chain().addColumnAfter().run() },
+    { label: t("editor.toolbar.deleteColumn"), icon: "tableColumnMinus", isActive: () => false, run: () => chain().deleteColumn().run() },
+    { label: t("editor.toolbar.deleteTable"), icon: "trash", isActive: () => false, run: () => chain().deleteTable().run() },
   ];
 });
 </script>
@@ -525,6 +549,20 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
             <Icon :name="isDeleted ? 'restore' : 'trash'" />
           </button>
         </div>
+      </div>
+
+      <div v-if="tableEditActions.length > 0" class="format-bar table-edit-bar">
+        <button
+          v-for="action in tableEditActions"
+          :key="action.label"
+          class="format-button"
+          :title="action.label"
+          :aria-label="action.label"
+          :disabled="isDeleted"
+          @click="action.run"
+        >
+          <Icon :name="action.icon" />
+        </button>
       </div>
 
       <div v-if="findOpen" class="find-bar" role="search" :aria-label="t('editor.find.openFind')">
@@ -661,17 +699,34 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 .editor-toolbar {
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* flex-start, not center: .format-bar is the one group that wraps
+     internally onto a second line when space is tight (below), and
+     center-aligning against its full wrapped height would scatter the
+     other groups' single line across both of its lines instead of
+     pinning them to the top. */
+  align-items: flex-start;
   gap: 12px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.table-edit-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
 }
 
 .format-bar {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
   flex-wrap: wrap;
 }
 
@@ -714,6 +769,7 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .editor-meta {
@@ -1000,6 +1056,36 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
 .editor-content :deep(.ProseMirror img) {
   max-width: 100%;
   border-radius: 6px;
+}
+
+.editor-content :deep(.ProseMirror table) {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0 0 8px;
+}
+
+.editor-content :deep(.ProseMirror th),
+.editor-content :deep(.ProseMirror td) {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  vertical-align: top;
+  position: relative;
+}
+
+.editor-content :deep(.ProseMirror th) {
+  background: var(--bg-hover);
+  font-weight: 600;
+  text-align: left;
+}
+
+.editor-content :deep(.ProseMirror td > p),
+.editor-content :deep(.ProseMirror th > p) {
+  margin: 0;
+}
+
+.editor-content :deep(.ProseMirror .selectedCell) {
+  background: var(--bg-selected);
 }
 
 .backlinks {

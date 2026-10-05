@@ -86,7 +86,13 @@
       "bulletList": "Bullet List",
       "numberedList": "Numbered List",
       "codeBlock": "Code Block",
-      "quote": "Quote"
+      "quote": "Quote",
+      "insertTable": "Insert Table",
+      "addRow": "Add Row",
+      "deleteRow": "Delete Row",
+      "addColumn": "Add Column",
+      "deleteColumn": "Delete Column",
+      "deleteTable": "Delete Table"
     },
     "find": {
       "openFind": "Find in Note",

@@ -429,6 +429,17 @@ pub fn set_note_template(
 }
 
 #[tauri::command]
+pub fn get_or_create_daily_note(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    date: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::get_or_create_daily_note(&conn, &notes_root, &date)
+}
+
+#[tauri::command]
 pub fn set_note_pinned(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,

@@ -78,6 +78,12 @@ export const icons = {
     <path d="M6 3.5h5.5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke-width="1.3" stroke-linejoin="round" />
     <path d="M11.5 3.5v2.5a1 1 0 0 0 1 1H15" stroke-width="1.3" stroke-linejoin="round" />
   `,
+  today: `
+    <rect x="3" y="4" width="14" height="13" rx="1.5" stroke-width="1.3" />
+    <path d="M3 7.5h14" stroke-width="1.3" />
+    <path d="M6.5 2.5v3M13.5 2.5v3" stroke-width="1.3" stroke-linecap="round" />
+    <rect x="8.2" y="10" width="3.6" height="3.6" rx="0.6" fill="currentColor" stroke="none" />
+  `,
   attachment: `
     <path d="M14.5 7.5 8.4 13.6a2.5 2.5 0 0 1-3.54-3.54l6.54-6.54a1.7 1.7 0 0 1 2.4 2.4l-6.37 6.37a.9.9 0 0 1-1.27-1.27l5.6-5.6" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
   `,

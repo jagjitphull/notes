@@ -17,6 +17,7 @@ defineProps<{
 
 const emit = defineEmits<{
   newFolder: [];
+  openToday: [];
   folderContextmenu: [event: MouseEvent, folder: Folder];
   tagContextmenu: [event: MouseEvent, tag: Tag];
 }>();
@@ -80,6 +81,12 @@ defineExpose({ focusSearch });
           <Icon class="nav-icon" name="notesList" />
           <span class="nav-label">{{ t('common.allNotes') }}</span>
           <span class="nav-count">{{ allCount }}</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-item" @click="emit('openToday')">
+          <Icon class="nav-icon" name="today" />
+          <span class="nav-label">{{ t('common.today') }}</span>
         </button>
       </li>
     </ul>

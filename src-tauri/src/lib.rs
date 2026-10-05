@@ -179,6 +179,7 @@ pub fn run() {
             commands::create_note,
             commands::create_note_from_template,
             commands::set_note_template,
+            commands::get_or_create_daily_note,
             commands::set_note_pinned,
             commands::add_note_tag,
             commands::remove_note_tag,

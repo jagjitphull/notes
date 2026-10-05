@@ -18,6 +18,7 @@ import {
   deleteNotePermanently,
   getNoteBody,
   getNotesRoot,
+  getOrCreateDailyNote,
   listFolders,
   listNotes,
   listTags,
@@ -374,6 +375,22 @@ async function onQuickCapture() {
   await onCreateNote();
 }
 
+// "en-CA" is a reliable trick for YYYY-MM-DD: local (not UTC), so the
+// daily note follows the user's own calendar day rather than flipping
+// over at UTC midnight.
+function todayLocalDate(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+async function onOpenToday() {
+  if (!notesRoot.value) return;
+  const id = await getOrCreateDailyNote(todayLocalDate());
+  await refreshData();
+  selectedId.value = "all";
+  selectedNoteId.value = id;
+  editorRef.value?.focusEditor();
+}
+
 async function onCreateFromTemplate(templateId: string) {
   const newId = await createNoteFromTemplate(currentFolderIdForCreate.value, templateId);
   await refreshData();
@@ -682,6 +699,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
     return;
   }
 
+  if (mod && e.key.toLowerCase() === "t") {
+    e.preventDefault();
+    onOpenToday();
+    return;
+  }
+
   if (!mod && (e.key === "ArrowDown" || e.key === "ArrowUp") && !isTypingContext()) {
     e.preventDefault();
     navigateList(e.key === "ArrowDown" ? 1 : -1);
@@ -787,6 +810,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :folder-counts="folderCounts"
         :smart-search-supported="smartSearchSupported"
         @new-folder="promptNewFolder('')"
+        @open-today="onOpenToday"
         @folder-contextmenu="onFolderContextmenu"
         @tag-contextmenu="onTagContextmenu"
       />

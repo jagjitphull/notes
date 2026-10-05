@@ -376,6 +376,59 @@ pub fn set_template(
     mutate_front_matter(conn, notes_root, note_id, |fm| fm.is_template = is_template)
 }
 
+const DAILY_NOTES_FOLDER: &str = "Daily Notes";
+
+/// "YYYY-MM-DD" shape check - enough to use `date` as a filename stem
+/// safely, not a full calendar validity check. `date` is the caller's
+/// local date (computed frontend-side, where "local" is simplest to get
+/// right); rejecting anything else keeps a malformed value from becoming
+/// a surprising file on disk.
+fn is_valid_date(date: &str) -> bool {
+    let bytes = date.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+}
+
+/// Finds today's daily note (notes_root/Daily Notes/<date>.md), creating
+/// it blank if this is the first visit today. Idempotent by construction,
+/// since the same date always maps to the same filename: a second call
+/// the same day returns the existing note instead of creating a
+/// duplicate (unlike create_note's unique_filename, which is
+/// deliberately the opposite - always a fresh file).
+pub fn get_or_create_daily_note(
+    conn: &Connection,
+    notes_root: &Path,
+    date: &str,
+) -> StoreResult<String> {
+    if !is_valid_date(date) {
+        return Err("invalid date".to_string());
+    }
+    let dir = notes_root.join(DAILY_NOTES_FOLDER);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    ensure_folder_chain(conn, notes_root, &dir)?;
+
+    let path = dir.join(format!("{date}.md"));
+    if !path.exists() {
+        let front_matter = FrontMatter {
+            id: Uuid::new_v4().to_string(),
+            tags: Vec::new(),
+            pinned: false,
+            created_at: now_rfc3339(),
+            deleted_at: None,
+            is_template: false,
+        };
+        let content = note_file::serialize(&front_matter, "");
+        fs::write(&path, content).map_err(|e| e.to_string())?;
+    }
+    upsert_note_file(conn, notes_root, &path)?
+        .ok_or_else(|| "failed to read daily note".to_string())
+}
+
 /// Rewrites a note's body (debounced autosave from the editor). Renames the
 /// underlying file when the title — the body's first line — changed, so the
 /// file stays browsable outside the app.
@@ -1323,5 +1376,38 @@ mod tests {
 
         delete_note_permanently(&conn, &notes_root, &id).unwrap();
         assert!(!notes_root.join(ATTACHMENTS_DIR).join(&id).exists());
+    }
+
+    #[test]
+    fn daily_note_is_found_not_duplicated_on_a_second_call() {
+        let app_dir = temp_dir("daily-app");
+        let notes_root = temp_dir("daily-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let first = get_or_create_daily_note(&conn, &notes_root, "2026-10-05").unwrap();
+        assert!(notes_root.join("Daily Notes/2026-10-05.md").exists());
+
+        let second = get_or_create_daily_note(&conn, &notes_root, "2026-10-05").unwrap();
+        assert_eq!(first, second);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // A different date gets its own, separate note.
+        let third = get_or_create_daily_note(&conn, &notes_root, "2026-10-06").unwrap();
+        assert_ne!(first, third);
+    }
+
+    #[test]
+    fn daily_note_rejects_a_malformed_date() {
+        let app_dir = temp_dir("daily-bad-app");
+        let notes_root = temp_dir("daily-bad-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        assert!(get_or_create_daily_note(&conn, &notes_root, "../../etc/passwd").is_err());
+        assert!(get_or_create_daily_note(&conn, &notes_root, "2026-10-5").is_err());
+        assert!(get_or_create_daily_note(&conn, &notes_root, "not-a-date").is_err());
     }
 }

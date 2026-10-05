@@ -87,6 +87,13 @@ describe("api.ts Tauri command bindings", () => {
     });
   });
 
+  it("getOrCreateDailyNote -> get_or_create_daily_note", () => {
+    api.getOrCreateDailyNote("2026-10-05");
+    expect(invokeMock).toHaveBeenCalledWith("get_or_create_daily_note", {
+      date: "2026-10-05",
+    });
+  });
+
   it("moveNote -> move_note", () => {
     api.moveNote("note-1", "folder-2");
     expect(invokeMock).toHaveBeenCalledWith("move_note", { id: "note-1", folderId: "folder-2" });

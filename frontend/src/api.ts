@@ -62,6 +62,10 @@ export function setNoteTemplate(id: string, isTemplate: boolean): Promise<void> 
   return invoke("set_note_template", { id, isTemplate });
 }
 
+export function getOrCreateDailyNote(date: string): Promise<string> {
+  return invoke("get_or_create_daily_note", { date });
+}
+
 export function setNotePinned(id: string, pinned: boolean): Promise<void> {
   return invoke("set_note_pinned", { id, pinned });
 }

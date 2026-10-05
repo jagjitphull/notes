@@ -9,13 +9,21 @@ mod watcher;
 use std::sync::Mutex;
 
 use tauri::{
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
 
 use commands::NotesRootState;
 use watcher::WatcherState;
+
+// Chosen to mirror Obsidian/Bear-style "quick capture" hotkeys. Known
+// collision: this is also Chrome's "New incognito window" shortcut on
+// Windows/Linux, so pressing it while Chrome is the focused app opens an
+// incognito window instead of reaching this app - registering a global
+// shortcut can't detect or avoid that, it only wins when no other app has
+// already claimed the combination first.
+const QUICK_CAPTURE_SHORTCUT: &str = "CmdOrCtrl+Shift+N";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,7 +45,26 @@ pub fn run() {
                 }
             }))
             .plugin(tauri_plugin_updater::Builder::new().build())
-            .plugin(tauri_plugin_process::init());
+            .plugin(tauri_plugin_process::init())
+            .plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_shortcut(QUICK_CAPTURE_SHORTCUT)
+                    .expect("QUICK_CAPTURE_SHORTCUT is a valid accelerator string")
+                    .with_handler(|app, _shortcut, event| {
+                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                            // The frontend owns note creation (same command
+                            // path as the "+" button) so it can land the new
+                            // note in the right list and focus the editor;
+                            // this just asks it to do that.
+                            let _ = app.emit("quick-capture", ());
+                        }
+                    })
+                    .build(),
+            );
     }
 
     builder

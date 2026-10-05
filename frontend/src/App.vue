@@ -115,6 +115,7 @@ const promptModal = ref<{
 } | null>(null);
 
 let unlistenNotesChanged: UnlistenFn | null = null;
+let unlistenQuickCapture: UnlistenFn | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let smartSearchAvailabilityTimer: ReturnType<typeof setInterval> | undefined;
@@ -136,6 +137,9 @@ async function refreshSmartSearchAvailability() {
 onMounted(async () => {
   unlistenNotesChanged = await listen("notes-changed", () => {
     refreshData();
+  });
+  unlistenQuickCapture = await listen("quick-capture", () => {
+    onQuickCapture();
   });
 
   notesRoot.value = await getNotesRoot();
@@ -159,6 +163,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlistenNotesChanged?.();
+  unlistenQuickCapture?.();
   if (smartSearchAvailabilityTimer !== undefined) clearInterval(smartSearchAvailabilityTimer);
 });
 
@@ -354,6 +359,15 @@ async function onCreateNote() {
   await refreshData();
   selectedNoteId.value = newId;
   editorRef.value?.focusEditor();
+}
+
+// Fired by the backend's global quick-capture hotkey, which may land while
+// any sidebar section (or no notes root at all) is showing - switch to "All
+// Notes" first so the blank note it creates is actually visible afterward.
+async function onQuickCapture() {
+  if (!notesRoot.value) return;
+  selectedId.value = "all";
+  await onCreateNote();
 }
 
 async function onCreateFromTemplate(templateId: string) {

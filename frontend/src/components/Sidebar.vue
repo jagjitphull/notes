@@ -10,6 +10,7 @@ defineProps<{
   tags: Tag[];
   allCount: number;
   deletedCount: number;
+  templateCount: number;
   folderCounts: Record<string, number>;
   smartSearchSupported: boolean;
 }>();
@@ -142,6 +143,17 @@ defineExpose({ focusSearch });
     </div>
 
     <div class="sidebar-footer">
+      <button
+        class="nav-item"
+        :class="{ active: selectedId === 'templates' }"
+        :aria-current="selectedId === 'templates' ? 'true' : undefined"
+        @click="selectedId = 'templates'"
+      >
+        <Icon class="nav-icon" name="template" />
+        <span class="nav-label">{{ t('common.templates') }}</span>
+        <span class="nav-count">{{ templateCount }}</span>
+      </button>
+
       <button
         class="nav-item"
         :class="{ active: selectedId === 'recently-deleted' }"

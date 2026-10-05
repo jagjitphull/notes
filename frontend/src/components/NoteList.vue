@@ -10,10 +10,12 @@ const props = defineProps<{
   showPinnedSections: boolean;
   canCreate: boolean;
   isTrash: boolean;
+  isTemplates: boolean;
 }>();
 
 const emit = defineEmits<{
   create: [];
+  createContextmenu: [event: MouseEvent];
   contextmenu: [event: MouseEvent, note: Note];
   sortClick: [event: MouseEvent];
 }>();
@@ -81,6 +83,7 @@ function preview(note: Note): string {
         :title="t('common.newNote')"
         :aria-label="t('common.newNote')"
         @click="emit('create')"
+        @contextmenu.prevent="emit('createContextmenu', $event)"
       >
         <Icon name="plus" />
       </button>
@@ -91,7 +94,10 @@ function preview(note: Note): string {
     </p>
 
     <div class="scroll-area">
-      <p v-if="notes.length === 0" class="empty-state">{{ t('noteList.empty') }}</p>
+      <p v-if="notes.length === 0 && isTemplates" class="empty-state">
+        {{ t('noteList.emptyTemplates') }}
+      </p>
+      <p v-else-if="notes.length === 0" class="empty-state">{{ t('noteList.empty') }}</p>
 
       <ul v-else class="items">
         <template v-for="(note, index) in notes" :key="note.id">

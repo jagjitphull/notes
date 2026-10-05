@@ -26,6 +26,7 @@ export interface Note {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  isTemplate: boolean;
 }
 
-export type SmartFolderId = "all" | "recently-deleted";
+export type SmartFolderId = "all" | "recently-deleted" | "templates";

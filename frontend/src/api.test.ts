@@ -57,7 +57,34 @@ describe("api.ts Tauri command bindings", () => {
 
   it("createNote -> create_note", () => {
     api.createNote("folder-1");
-    expect(invokeMock).toHaveBeenCalledWith("create_note", { folderId: "folder-1" });
+    expect(invokeMock).toHaveBeenCalledWith("create_note", {
+      folderId: "folder-1",
+      isTemplate: false,
+    });
+  });
+
+  it("createNote(folderId, true) -> create_note with isTemplate", () => {
+    api.createNote("folder-1", true);
+    expect(invokeMock).toHaveBeenCalledWith("create_note", {
+      folderId: "folder-1",
+      isTemplate: true,
+    });
+  });
+
+  it("createNoteFromTemplate -> create_note_from_template", () => {
+    api.createNoteFromTemplate("folder-1", "template-1");
+    expect(invokeMock).toHaveBeenCalledWith("create_note_from_template", {
+      folderId: "folder-1",
+      templateId: "template-1",
+    });
+  });
+
+  it("setNoteTemplate -> set_note_template", () => {
+    api.setNoteTemplate("note-1", true);
+    expect(invokeMock).toHaveBeenCalledWith("set_note_template", {
+      id: "note-1",
+      isTemplate: true,
+    });
   });
 
   it("moveNote -> move_note", () => {

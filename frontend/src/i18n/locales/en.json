@@ -14,6 +14,7 @@
     "newFolder": "New Folder",
     "allNotes": "All Notes",
     "recentlyDeleted": "Recently Deleted",
+    "templates": "Templates",
     "notes": "Notes",
     "tag": "Tag"
   },
@@ -52,7 +53,9 @@
     "sectionLabel": "Notes list",
     "trashNotice": "Notes are deleted permanently from here after 30 days.",
     "empty": "No Notes",
+    "emptyTemplates": "No templates yet — right-click a note and choose \"Save as Template\".",
     "pinned": "Pinned",
+    "blankNote": "Blank Note",
     "smartSearchPrefix": "Smart Search: ",
     "sort": {
       "label": "Sort By",
@@ -107,6 +110,8 @@
   "contextMenu": {
     "deletePermanently": "Delete Permanently",
     "confirmDeletePermanent": "Permanently delete \"{title}\"? This can't be undone.",
+    "saveAsTemplate": "Save as Template",
+    "removeFromTemplates": "Remove from Templates",
     "moveTo": "Move to “{folder}”",
     "newSubfolder": "New Subfolder…",
     "renameEllipsis": "Rename…",

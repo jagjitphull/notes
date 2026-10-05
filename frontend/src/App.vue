@@ -13,6 +13,7 @@ import {
   addNoteTag,
   createFolder,
   createNote,
+  createNoteFromTemplate,
   deleteFolder,
   deleteNotePermanently,
   getNoteBody,
@@ -28,6 +29,7 @@ import {
   setFolderColor,
   setNoteDeleted,
   setNotePinned,
+  setNoteTemplate,
   setTagColor,
   smartSearch,
   smartSearchAvailable,
@@ -165,13 +167,18 @@ async function onSetupReady() {
   await refreshData();
 }
 
-const allCount = computed(() => notes.value.filter((n) => !n.deletedAt).length);
+const allCount = computed(
+  () => notes.value.filter((n) => !n.deletedAt && !n.isTemplate).length,
+);
 const deletedCount = computed(() => notes.value.filter((n) => n.deletedAt).length);
+const templateCount = computed(
+  () => notes.value.filter((n) => n.isTemplate && !n.deletedAt).length,
+);
 const folderCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
   for (const folder of folders.value) {
     counts[folder.id] = notes.value.filter(
-      (n) => n.folderId === folder.id && !n.deletedAt,
+      (n) => n.folderId === folder.id && !n.deletedAt && !n.isTemplate,
     ).length;
   }
   return counts;
@@ -224,23 +231,40 @@ const baseNotes = computed(() => {
   if (selectedId.value === "recently-deleted") {
     return pool.filter((n) => n.deletedAt);
   }
+  if (selectedId.value === "templates") {
+    return pool.filter((n) => n.isTemplate && !n.deletedAt);
+  }
   if (selectedId.value.startsWith("tag:")) {
     const tagId = selectedId.value.slice(4);
-    return pool.filter((n) => !n.deletedAt && n.tagIds.includes(tagId));
+    return pool.filter((n) => !n.deletedAt && !n.isTemplate && n.tagIds.includes(tagId));
   }
   if (selectedId.value === "all") {
-    return pool.filter((n) => !n.deletedAt);
+    return pool.filter((n) => !n.deletedAt && !n.isTemplate);
   }
-  return pool.filter((n) => !n.deletedAt && n.folderId === selectedId.value);
+  return pool.filter((n) => !n.deletedAt && !n.isTemplate && n.folderId === selectedId.value);
 });
 
 const showPinnedSections = computed(
-  () => selectedId.value !== "recently-deleted" && !isSearching.value,
+  () =>
+    selectedId.value !== "recently-deleted" &&
+    selectedId.value !== "templates" &&
+    !isSearching.value,
 );
 
 const canCreate = computed(
   () => selectedId.value !== "recently-deleted" && !selectedId.value.startsWith("tag:"),
 );
+
+// Where a newly created note (blank, or from a template) belongs: the
+// current folder when one's selected, otherwise the root - "all"/
+// "templates"/"recently-deleted"/a tag aren't real folder ids.
+const currentFolderIdForCreate = computed(() => {
+  const id = selectedId.value;
+  if (id === "all" || id === "templates" || id === "recently-deleted" || id.startsWith("tag:")) {
+    return "";
+  }
+  return id;
+});
 
 const filteredNotes = computed(() => {
   // Search results already come back relevance-ranked from FTS5; browsing
@@ -266,6 +290,7 @@ const listTitle = computed(() => {
   }
   if (selectedId.value === "all") return t("common.allNotes");
   if (selectedId.value === "recently-deleted") return t("common.recentlyDeleted");
+  if (selectedId.value === "templates") return t("common.templates");
   if (selectedId.value.startsWith("tag:")) {
     const tagId = selectedId.value.slice(4);
     return tags.value.find((tag) => tag.id === tagId)?.name ?? t("common.tag");
@@ -322,11 +347,35 @@ watch(selectedNoteId, async (newId, oldId) => {
 });
 
 async function onCreateNote() {
-  const folderId = selectedId.value === "all" ? "" : selectedId.value;
-  const newId = await createNote(folderId);
+  const newId = await createNote(
+    currentFolderIdForCreate.value,
+    selectedId.value === "templates",
+  );
   await refreshData();
   selectedNoteId.value = newId;
   editorRef.value?.focusEditor();
+}
+
+async function onCreateFromTemplate(templateId: string) {
+  const newId = await createNoteFromTemplate(currentFolderIdForCreate.value, templateId);
+  await refreshData();
+  selectedNoteId.value = newId;
+  editorRef.value?.focusEditor();
+}
+
+function onCreateContextmenu(event: MouseEvent) {
+  const templates = notes.value.filter((n) => n.isTemplate && !n.deletedAt);
+  const items: ContextMenuItem[] = [{ label: t("noteList.blankNote"), action: onCreateNote }];
+  if (templates.length > 0) {
+    items.push({ label: "", action: () => {}, separator: true });
+    for (const template of templates) {
+      items.push({
+        label: template.title || t("common.newNote"),
+        action: () => onCreateFromTemplate(template.id),
+      });
+    }
+  }
+  contextMenu.value = { x: event.clientX, y: event.clientY, items };
 }
 
 async function onTogglePin() {
@@ -393,6 +442,12 @@ function onNoteContextMenu(event: MouseEvent, note: Note) {
     items.push({
       label: note.isPinned ? t("common.unpin") : t("common.pin"),
       action: () => setNotePinned(note.id, !note.isPinned).then(refreshData),
+    });
+    items.push({
+      label: note.isTemplate
+        ? t("contextMenu.removeFromTemplates")
+        : t("contextMenu.saveAsTemplate"),
+      action: () => setNoteTemplate(note.id, !note.isTemplate).then(refreshData),
     });
 
     const otherFolders = folders.value.filter((f) => f.id !== note.folderId);
@@ -694,6 +749,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :tags="tags"
         :all-count="allCount"
         :deleted-count="deletedCount"
+        :template-count="templateCount"
         :folder-counts="folderCounts"
         :smart-search-supported="smartSearchSupported"
         @new-folder="promptNewFolder('')"
@@ -725,7 +781,9 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :show-pinned-sections="showPinnedSections"
         :can-create="canCreate"
         :is-trash="selectedId === 'recently-deleted'"
+        :is-templates="selectedId === 'templates'"
         @create="onCreateNote"
+        @create-contextmenu="onCreateContextmenu"
         @contextmenu="onNoteContextMenu"
         @sort-click="onSortClick"
       />

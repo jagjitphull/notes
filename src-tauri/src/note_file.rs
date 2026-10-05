@@ -13,6 +13,11 @@ pub struct FrontMatter {
     pub created_at: String,
     #[serde(default)]
     pub deleted_at: Option<String>,
+    /// A note usable as the starting point for a new note (see
+    /// store::create_note_from_template), kept out of normal folder/"All
+    /// Notes" views the same way a deleted note is.
+    #[serde(default)]
+    pub is_template: bool,
 }
 
 pub struct ParsedNote {
@@ -173,6 +178,7 @@ mod tests {
             pinned: true,
             created_at: "2026-01-01T00:00:00Z".into(),
             deleted_at: None,
+            is_template: false,
         };
         let body = "Grocery list\nMilk, eggs, bread";
         let raw = serialize(&fm, body);

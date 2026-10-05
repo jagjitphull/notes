@@ -165,14 +165,15 @@ pub struct NoteListItemDto {
     pub deleted_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub is_template: bool,
 }
 
 const NOTE_LIST_ITEM_COLUMNS: &str = "n.id, n.title, n.plaintext_content, n.folder_id, n.is_pinned,
-     n.deleted_at, n.created_at, n.updated_at,
+     n.deleted_at, n.created_at, n.updated_at, n.is_template,
      COALESCE((SELECT GROUP_CONCAT(nt.tag_id) FROM note_tags nt WHERE nt.note_id = n.id), '')";
 
 fn map_note_list_item(r: &rusqlite::Row) -> rusqlite::Result<NoteListItemDto> {
-    let tag_ids_raw: String = r.get(8)?;
+    let tag_ids_raw: String = r.get(9)?;
     Ok(NoteListItemDto {
         id: r.get(0)?,
         title: r.get(1)?,
@@ -182,6 +183,7 @@ fn map_note_list_item(r: &rusqlite::Row) -> rusqlite::Result<NoteListItemDto> {
         deleted_at: r.get(5)?,
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
+        is_template: r.get::<_, i64>(8)? != 0,
         tag_ids: if tag_ids_raw.is_empty() {
             Vec::new()
         } else {
@@ -377,10 +379,35 @@ pub fn create_note(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
     folder_id: String,
+    is_template: bool,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::create_note(&conn, &notes_root, &folder_id)
+    store::create_note(&conn, &notes_root, &folder_id, is_template)
+}
+
+#[tauri::command]
+pub fn create_note_from_template(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    folder_id: String,
+    template_id: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::create_note_from_template(&conn, &notes_root, &folder_id, &template_id)
+}
+
+#[tauri::command]
+pub fn set_note_template(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    id: String,
+    is_template: bool,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::set_template(&conn, &notes_root, &id, is_template)
 }
 
 #[tauri::command]

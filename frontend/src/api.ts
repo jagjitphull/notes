@@ -50,8 +50,16 @@ export function saveNoteBody(id: string, body: string): Promise<void> {
   return invoke("save_note_body", { id, body });
 }
 
-export function createNote(folderId: string): Promise<string> {
-  return invoke("create_note", { folderId });
+export function createNote(folderId: string, isTemplate = false): Promise<string> {
+  return invoke("create_note", { folderId, isTemplate });
+}
+
+export function createNoteFromTemplate(folderId: string, templateId: string): Promise<string> {
+  return invoke("create_note_from_template", { folderId, templateId });
+}
+
+export function setNoteTemplate(id: string, isTemplate: boolean): Promise<void> {
+  return invoke("set_note_template", { id, isTemplate });
 }
 
 export function setNotePinned(id: string, pinned: boolean): Promise<void> {

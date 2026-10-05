@@ -152,6 +152,7 @@ pub fn upsert_note_file(
                 pinned: false,
                 created_at: now_rfc3339(),
                 deleted_at: None,
+                is_template: false,
             };
             let content = note_file::serialize(&fm, &parsed.body);
             fs::write(path, &content).map_err(|e| e.to_string())?;
@@ -174,8 +175,8 @@ pub fn upsert_note_file(
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT INTO notes (id, file_path, title, plaintext_content, folder_id, is_pinned, deleted_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO notes (id, file_path, title, plaintext_content, folder_id, is_pinned, deleted_at, created_at, updated_at, is_template)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET
            file_path = excluded.file_path,
            title = excluded.title,
@@ -183,7 +184,8 @@ pub fn upsert_note_file(
            folder_id = excluded.folder_id,
            is_pinned = excluded.is_pinned,
            deleted_at = excluded.deleted_at,
-           updated_at = excluded.updated_at",
+           updated_at = excluded.updated_at,
+           is_template = excluded.is_template",
         params![
             front_matter.id,
             file_rel,
@@ -194,6 +196,7 @@ pub fn upsert_note_file(
             front_matter.deleted_at,
             front_matter.created_at,
             updated_at,
+            front_matter.is_template as i32,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -302,7 +305,13 @@ fn unique_filename(dir: &Path, desired_title: &str, exclude: Option<&Path>) -> P
     candidate
 }
 
-pub fn create_note(conn: &Connection, notes_root: &Path, folder_id: &str) -> StoreResult<String> {
+fn write_new_note(
+    conn: &Connection,
+    notes_root: &Path,
+    folder_id: &str,
+    body: &str,
+    is_template: bool,
+) -> StoreResult<String> {
     let dir = if folder_id.is_empty() {
         notes_root.to_path_buf()
     } else {
@@ -311,19 +320,60 @@ pub fn create_note(conn: &Connection, notes_root: &Path, folder_id: &str) -> Sto
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     ensure_folder_chain(conn, notes_root, &dir)?;
 
-    let path = unique_filename(&dir, "New Note", None);
+    let title = note_file::extract_title(body);
+    let stem = if title.is_empty() { "New Note" } else { &title };
+    let path = unique_filename(&dir, stem, None);
     let front_matter = FrontMatter {
         id: Uuid::new_v4().to_string(),
         tags: Vec::new(),
         pinned: false,
         created_at: now_rfc3339(),
         deleted_at: None,
+        is_template,
     };
-    let content = note_file::serialize(&front_matter, "");
+    let content = note_file::serialize(&front_matter, body);
     fs::write(&path, content).map_err(|e| e.to_string())?;
 
     upsert_note_file(conn, notes_root, &path)?;
     Ok(front_matter.id)
+}
+
+pub fn create_note(
+    conn: &Connection,
+    notes_root: &Path,
+    folder_id: &str,
+    is_template: bool,
+) -> StoreResult<String> {
+    write_new_note(conn, notes_root, folder_id, "", is_template)
+}
+
+/// Copies a template note's current body into a brand-new, ordinary note -
+/// a one-time copy, not a link back to the template: editing either one
+/// afterwards never affects the other.
+pub fn create_note_from_template(
+    conn: &Connection,
+    notes_root: &Path,
+    folder_id: &str,
+    template_id: &str,
+) -> StoreResult<String> {
+    let template_rel: String = conn
+        .query_row(
+            "SELECT file_path FROM notes WHERE id = ?1 AND is_template = 1",
+            [template_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let body = read_note_body(notes_root, &template_rel)?;
+    write_new_note(conn, notes_root, folder_id, &body, false)
+}
+
+pub fn set_template(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    is_template: bool,
+) -> StoreResult<()> {
+    mutate_front_matter(conn, notes_root, note_id, |fm| fm.is_template = is_template)
 }
 
 /// Rewrites a note's body (debounced autosave from the editor). Renames the
@@ -808,7 +858,7 @@ mod tests {
 
         full_rescan(&conn, &notes_root).unwrap();
 
-        let id = create_note(&conn, &notes_root, "").unwrap();
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
         save_note_body(&conn, &notes_root, &id, "Grocery list\nMilk, eggs").unwrap();
 
         let (title, file_path): (String, String) = conn
@@ -863,7 +913,7 @@ mod tests {
         let notes_root = temp_dir("root2");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "").unwrap();
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
         full_rescan(&conn, &notes_root).unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
@@ -890,7 +940,7 @@ mod tests {
         let notes_root = temp_dir("root4");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "Work").unwrap();
+        let id = create_note(&conn, &notes_root, "Work", false).unwrap();
 
         let folder_id: String = conn
             .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| {
@@ -934,7 +984,7 @@ mod tests {
         let notes_root = temp_dir("root8");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "").unwrap();
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
         add_tag_to_note(&conn, &notes_root, &id, "Work").unwrap();
         add_tag_to_note(&conn, &notes_root, &id, "urgent").unwrap();
         // Case-insensitive de-dup: adding "work" again should be a no-op.
@@ -1007,7 +1057,7 @@ mod tests {
         assert_eq!(work_id, "Work");
         assert!(notes_root.join("Work").is_dir());
 
-        let note_id = create_note(&conn, &notes_root, "").unwrap();
+        let note_id = create_note(&conn, &notes_root, "", false).unwrap();
         move_note(&conn, &notes_root, &note_id, &work_id).unwrap();
         let folder_id: String = conn
             .query_row(
@@ -1053,7 +1103,7 @@ mod tests {
         let notes_root = temp_dir("root6");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "").unwrap();
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
         let rel: String = conn
             .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1075,9 +1125,9 @@ mod tests {
         let notes_root = temp_dir("root7");
         let conn = db::init(&app_dir).unwrap();
 
-        let old_id = create_note(&conn, &notes_root, "").unwrap();
-        let recent_id = create_note(&conn, &notes_root, "").unwrap();
-        let kept_id = create_note(&conn, &notes_root, "").unwrap(); // never deleted
+        let old_id = create_note(&conn, &notes_root, "", false).unwrap();
+        let recent_id = create_note(&conn, &notes_root, "", false).unwrap();
+        let kept_id = create_note(&conn, &notes_root, "", false).unwrap(); // never deleted
 
         let old_deleted_at = (Utc::now() - chrono::Duration::days(31)).to_rfc3339();
         mutate_front_matter(&conn, &notes_root, &old_id, |fm| {

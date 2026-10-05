@@ -61,12 +61,13 @@ const emit = defineEmits<{
 }>();
 
 // Other notes this one can link to via [[Title]] - excludes the current
-// note (linking to itself isn't useful) and trashed notes (nothing to
-// navigate to). Keyed by lowercased title since links resolve by title,
-// not id: renaming a note breaks links elsewhere that pointed at its old
-// title, rather than tracking renames - see tiptap/noteLink.ts.
+// note (linking to itself isn't useful), trashed notes (nothing to
+// navigate to), and templates (not "real" notes to link between). Keyed
+// by lowercased title since links resolve by title, not id: renaming a
+// note breaks links elsewhere that pointed at its old title, rather than
+// tracking renames - see tiptap/noteLink.ts.
 const linkTargets = computed(() =>
-  props.notes.filter((n) => !n.deletedAt && n.id !== props.note?.id),
+  props.notes.filter((n) => !n.deletedAt && !n.isTemplate && n.id !== props.note?.id),
 );
 
 const noteTitleIndex = computed(() => {

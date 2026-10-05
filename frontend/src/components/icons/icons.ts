@@ -66,6 +66,10 @@ export const icons = {
     <rect x="4.5" y="2.5" width="11" height="15" rx="1.5" stroke-width="1.3" />
     <path d="M7 6.5h6M7 9.5h6M7 12.5h4" stroke-width="1.3" stroke-linecap="round" />
   `,
+  template: `
+    <path d="M6 3.5h5.5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke-width="1.3" stroke-linejoin="round" />
+    <path d="M11.5 3.5v2.5a1 1 0 0 0 1 1H15" stroke-width="1.3" stroke-linejoin="round" />
+  `,
   sort: `
     <path d="M7 4v12M4.5 6.5 7 4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M13 16V4M10.5 13.5 13 16l2.5-2.5" stroke-linecap="round" stroke-linejoin="round" />

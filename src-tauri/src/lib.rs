@@ -69,6 +69,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -184,6 +185,9 @@ pub fn run() {
             commands::set_note_deleted,
             commands::delete_note_permanently,
             commands::move_note,
+            commands::save_attachment,
+            commands::get_attachment_size,
+            commands::open_attachment,
             commands::create_folder,
             commands::rename_folder,
             commands::delete_folder,

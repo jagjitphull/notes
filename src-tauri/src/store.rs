@@ -509,6 +509,7 @@ pub fn delete_note_permanently(
         )
         .map_err(|e| e.to_string())?;
     fs::remove_file(notes_root.join(&rel)).ok();
+    fs::remove_dir_all(notes_root.join(ATTACHMENTS_DIR).join(note_id)).ok();
     conn.execute("DELETE FROM notes WHERE id = ?1", [note_id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -547,6 +548,103 @@ pub fn purge_expired_trash(
 pub fn read_note_body(notes_root: &Path, rel_file_path: &str) -> StoreResult<String> {
     let raw = fs::read_to_string(notes_root.join(rel_file_path)).map_err(|e| e.to_string())?;
     Ok(note_file::parse(&raw).body)
+}
+
+/// Where a note's dropped/pasted non-image files live on disk, keyed by
+/// note id rather than alongside the note's own file - a note can be
+/// renamed or moved between folders without that breaking its attachments'
+/// `![[...]]` embeds, which store this path (see [`save_attachment`]).
+const ATTACHMENTS_DIR: &str = ".attachments";
+
+pub struct AttachmentInfo {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+}
+
+/// Resolves an attachment's stored relative path (e.g.
+/// ".attachments/<note-id>/<filename>", as embedded in a note's markdown)
+/// to an absolute path, rejecting anything that would land outside
+/// notes_root/.attachments - a note is a plain file a user (or a sync
+/// conflict) could hand-edit, so a `![[../../../etc/passwd]]` embed must
+/// not be stat-able or openable.
+fn resolve_attachment_path(notes_root: &Path, rel_path: &str) -> StoreResult<PathBuf> {
+    let attachments_root = notes_root.join(ATTACHMENTS_DIR);
+    let canonical_root = attachments_root.canonicalize().map_err(|e| e.to_string())?;
+    let canonical_candidate = notes_root
+        .join(rel_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !canonical_candidate.starts_with(&canonical_root) {
+        return Err("attachment path is outside the attachments folder".to_string());
+    }
+    Ok(canonical_candidate)
+}
+
+fn unique_attachment_path(dir: &Path, filename: &str) -> PathBuf {
+    let path = Path::new(filename);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = path.extension().and_then(|s| s.to_str());
+    let name = |n: u32| match (ext, n) {
+        (Some(ext), 1) => format!("{stem}.{ext}"),
+        (Some(ext), n) => format!("{stem} {n}.{ext}"),
+        (None, 1) => stem.to_string(),
+        (None, n) => format!("{stem} {n}"),
+    };
+    let mut n = 1;
+    let mut candidate = dir.join(name(n));
+    while candidate.exists() {
+        n += 1;
+        candidate = dir.join(name(n));
+    }
+    candidate
+}
+
+/// Saves a dropped/pasted file's bytes under notes_root/.attachments/<note
+/// id>/, returning the path (relative to notes_root, forward-slashed) to
+/// embed as `![[path]]` in the note's markdown. Only the filename's own
+/// basename is trusted - a dragged-in file could be named with path
+/// separators.
+pub fn save_attachment(
+    notes_root: &Path,
+    note_id: &str,
+    filename: &str,
+    bytes: &[u8],
+) -> StoreResult<AttachmentInfo> {
+    let safe_name = Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("file");
+    let dir = notes_root.join(ATTACHMENTS_DIR).join(note_id);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = unique_attachment_path(&dir, safe_name);
+    fs::write(&path, bytes).map_err(|e| e.to_string())?;
+
+    let rel_path = path
+        .strip_prefix(notes_root)
+        .map_err(|e| e.to_string())?
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    let name = path.file_name().unwrap().to_string_lossy().into_owned();
+    Ok(AttachmentInfo {
+        path: rel_path,
+        name,
+        size: bytes.len() as u64,
+    })
+}
+
+pub fn attachment_size(notes_root: &Path, rel_path: &str) -> StoreResult<u64> {
+    let abs = resolve_attachment_path(notes_root, rel_path)?;
+    fs::metadata(&abs)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
+}
+
+pub fn attachment_absolute_path(notes_root: &Path, rel_path: &str) -> StoreResult<PathBuf> {
+    resolve_attachment_path(notes_root, rel_path)
 }
 
 /// Turns free-form user search text into an FTS5 MATCH query: each word
@@ -1164,5 +1262,66 @@ mod tests {
             build_fts_query("title:foo AND bar"),
             "\"title:foo\"* \"AND\"* \"bar\"*"
         );
+    }
+
+    #[test]
+    fn save_attachment_writes_file_and_dedupes_names() {
+        let notes_root = temp_dir("attach-root");
+        fs::create_dir_all(&notes_root).unwrap();
+
+        let info = save_attachment(&notes_root, "note-1", "report.pdf", b"first").unwrap();
+        assert_eq!(info.path, ".attachments/note-1/report.pdf");
+        assert_eq!(info.name, "report.pdf");
+        assert_eq!(info.size, 5);
+
+        // A second attachment with the same filename gets a distinct name
+        // instead of overwriting the first.
+        let info2 = save_attachment(&notes_root, "note-1", "report.pdf", b"second").unwrap();
+        assert_eq!(info2.path, ".attachments/note-1/report 2.pdf");
+
+        assert_eq!(
+            fs::read(notes_root.join(&info.path)).unwrap(),
+            b"first".to_vec()
+        );
+        assert_eq!(
+            fs::read(notes_root.join(&info2.path)).unwrap(),
+            b"second".to_vec()
+        );
+
+        // A hostile filename can't escape into an arbitrary location -
+        // only its basename is used.
+        let escaped = save_attachment(&notes_root, "note-2", "../../etc/evil.txt", b"x").unwrap();
+        assert_eq!(escaped.path, ".attachments/note-2/evil.txt");
+    }
+
+    #[test]
+    fn attachment_size_rejects_paths_outside_attachments_dir() {
+        let notes_root = temp_dir("attach-size-root");
+        fs::create_dir_all(&notes_root).unwrap();
+
+        let info = save_attachment(&notes_root, "note-1", "photo.png", b"bytes!!").unwrap();
+        assert_eq!(attachment_size(&notes_root, &info.path).unwrap(), 7);
+
+        // A secret file elsewhere under notes_root is not reachable by
+        // crafting a path that starts with "..".
+        let secret_dir = notes_root.join("secret");
+        fs::create_dir_all(&secret_dir).unwrap();
+        fs::write(secret_dir.join("private.txt"), b"shh").unwrap();
+        assert!(attachment_size(&notes_root, "../secret/private.txt").is_err());
+        assert!(attachment_size(&notes_root, ".attachments/../secret/private.txt").is_err());
+    }
+
+    #[test]
+    fn delete_note_permanently_removes_its_attachments_dir() {
+        let app_dir = temp_dir("attach-del-app");
+        let notes_root = temp_dir("attach-del-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
+        save_attachment(&notes_root, &id, "notes.txt", b"hi").unwrap();
+        assert!(notes_root.join(ATTACHMENTS_DIR).join(&id).exists());
+
+        delete_note_permanently(&conn, &notes_root, &id).unwrap();
+        assert!(!notes_root.join(ATTACHMENTS_DIR).join(&id).exists());
     }
 }

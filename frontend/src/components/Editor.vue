@@ -25,7 +25,10 @@ import {
   type FindMatch,
 } from "../tiptap/findReplace";
 import { exitSuggestion } from "@tiptap/suggestion";
+import type { EditorView } from "@tiptap/pm/view";
 import { extractLinkedTitles, NoteLink } from "../tiptap/noteLink";
+import { FileAttachment } from "../tiptap/fileAttachment";
+import { saveAttachment } from "../api";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
 // (same syntax Obsidian and others use), since tiptap-markdown has no
@@ -147,6 +150,7 @@ const editor = useEditor({
       isResolved: (title) => noteTitleIndex.value.has(title.trim().toLowerCase()),
       onNavigate: handleNoteLinkNavigate,
     }),
+    FileAttachment,
     Markdown.configure({
       html: false,
       tightLists: true,
@@ -167,21 +171,18 @@ const editor = useEditor({
       "aria-label": t("editor.contentLabel"),
     },
     handleDrop(view, event) {
-      const files = Array.from(event.dataTransfer?.files ?? []).filter((f) =>
-        f.type.startsWith("image/"),
-      );
-      if (files.length === 0) return false;
+      const allFiles = Array.from(event.dataTransfer?.files ?? []);
+      const images = allFiles.filter((f) => f.type.startsWith("image/"));
+      const others = allFiles.filter((f) => !f.type.startsWith("image/"));
+      if (images.length === 0 && others.length === 0) return false;
       event.preventDefault();
 
       const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-      for (const file of files) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const node = view.state.schema.nodes.image.create({ src: reader.result });
-          const tr = view.state.tr.insert(pos ?? view.state.doc.content.size, node);
-          view.dispatch(tr);
-        };
-        reader.readAsDataURL(file);
+      for (const file of images) {
+        insertImage(view, file, pos ?? view.state.doc.content.size);
+      }
+      for (const file of others) {
+        insertAttachment(view, file, pos ?? view.state.doc.content.size);
       }
       return true;
     },
@@ -191,13 +192,11 @@ const editor = useEditor({
     handlePaste(view, event) {
       // .files first, matching handleDrop above - some WebKit builds
       // don't populate DataTransferItem.kind/getAsFile() reliably for a
-      // clipboard image, but do populate .files.
-      let files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
-        f.type.startsWith("image/"),
-      );
+      // clipboard file, but do populate .files.
+      let files = Array.from(event.clipboardData?.files ?? []);
       if (files.length === 0) {
         files = Array.from(event.clipboardData?.items ?? [])
-          .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+          .filter((item) => item.kind === "file")
           .map((item) => item.getAsFile())
           .filter((f): f is File => f !== null);
       }
@@ -206,13 +205,11 @@ const editor = useEditor({
 
       const pos = view.state.selection.from;
       for (const file of files) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const node = view.state.schema.nodes.image.create({ src: reader.result });
-          const tr = view.state.tr.insert(pos, node);
-          view.dispatch(tr);
-        };
-        reader.readAsDataURL(file);
+        if (file.type.startsWith("image/")) {
+          insertImage(view, file, pos);
+        } else {
+          insertAttachment(view, file, pos);
+        }
       }
       return true;
     },
@@ -226,6 +223,41 @@ const editor = useEditor({
     if (findOpen.value) refreshMatches();
   },
 });
+
+function insertImage(view: EditorView, file: File, pos: number) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const node = view.state.schema.nodes.image.create({ src: reader.result });
+    const tr = view.state.tr.insert(pos, node);
+    view.dispatch(tr);
+  };
+  reader.readAsDataURL(file);
+}
+
+// Dropped/pasted non-image files (PDFs, documents, ...) are saved to disk
+// under notes_root/.attachments/<note-id>/ (see store::save_attachment)
+// rather than inlined as base64 like images above - attachments can be far
+// larger than a typical pasted screenshot, and inflating a note's own
+// markdown file by the full size of every file it references would defeat
+// the point of keeping notes as small, portable plain-text files.
+async function insertAttachment(view: EditorView, file: File, pos: number) {
+  const noteId = props.note?.id;
+  if (!noteId) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let info: Awaited<ReturnType<typeof saveAttachment>>;
+  try {
+    info = await saveAttachment(noteId, file.name, bytes);
+  } catch (e) {
+    console.error("failed to save attachment", e);
+    return;
+  }
+  // The doc may have changed while the save was in flight (typing,
+  // another drop); clamp so this can't insert past the current end.
+  const insertPos = Math.min(pos, view.state.doc.content.size);
+  const node = view.state.schema.nodes.fileAttachment.create({ path: info.path });
+  const tr = view.state.tr.insert(insertPos, node);
+  view.dispatch(tr);
+}
 
 // Safety net for pasted images: on at least one WebKitGTK build, a
 // pasted (not dragged) image doesn't reach handlePaste's clipboardData

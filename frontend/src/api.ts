@@ -86,6 +86,31 @@ export function moveNote(id: string, folderId: string): Promise<void> {
   return invoke("move_note", { id, folderId });
 }
 
+export interface AttachmentInfo {
+  path: string;
+  name: string;
+  size: number;
+}
+
+export function saveAttachment(
+  noteId: string,
+  filename: string,
+  bytes: Uint8Array,
+): Promise<AttachmentInfo> {
+  // Array.from converts to a plain number array - a Uint8Array would
+  // otherwise JSON.stringify as {"0":1,"1":2,...}, not a JSON array, and
+  // fail to deserialize into the Rust side's Vec<u8>.
+  return invoke("save_attachment", { noteId, filename, bytes: Array.from(bytes) });
+}
+
+export function getAttachmentSize(path: string): Promise<number> {
+  return invoke("get_attachment_size", { path });
+}
+
+export function openAttachment(path: string): Promise<void> {
+  return invoke("open_attachment", { path });
+}
+
 export function createFolder(parentId: string, name: string): Promise<string> {
   return invoke("create_folder", { parentId, name });
 }

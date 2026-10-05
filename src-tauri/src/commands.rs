@@ -300,6 +300,24 @@ pub struct TagDto {
     pub color: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentDto {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+}
+
+impl From<store::AttachmentInfo> for AttachmentDto {
+    fn from(info: store::AttachmentInfo) -> Self {
+        Self {
+            path: info.path,
+            name: info.name,
+            size: info.size,
+        }
+    }
+}
+
 #[tauri::command]
 pub fn list_tags(db_state: State<DbState>) -> Result<Vec<TagDto>, String> {
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
@@ -479,6 +497,37 @@ pub fn move_note(
     let notes_root = require_notes_root(&root_state)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     store::move_note(&conn, &notes_root, &id, &folder_id)
+}
+
+#[tauri::command]
+pub fn save_attachment(
+    root_state: State<NotesRootState>,
+    note_id: String,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Result<AttachmentDto, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    store::save_attachment(&notes_root, &note_id, &filename, &bytes).map(Into::into)
+}
+
+#[tauri::command]
+pub fn get_attachment_size(root_state: State<NotesRootState>, path: String) -> Result<u64, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    store::attachment_size(&notes_root, &path)
+}
+
+#[tauri::command]
+pub fn open_attachment(
+    app: AppHandle,
+    root_state: State<NotesRootState>,
+    path: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let abs = store::attachment_absolute_path(&notes_root, &path)?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(abs.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

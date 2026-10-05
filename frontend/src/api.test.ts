@@ -92,6 +92,29 @@ describe("api.ts Tauri command bindings", () => {
     expect(invokeMock).toHaveBeenCalledWith("move_note", { id: "note-1", folderId: "folder-2" });
   });
 
+  it("saveAttachment -> save_attachment with a plain number array", () => {
+    api.saveAttachment("note-1", "report.pdf", new Uint8Array([1, 2, 3]));
+    expect(invokeMock).toHaveBeenCalledWith("save_attachment", {
+      noteId: "note-1",
+      filename: "report.pdf",
+      bytes: [1, 2, 3],
+    });
+  });
+
+  it("getAttachmentSize -> get_attachment_size", () => {
+    api.getAttachmentSize(".attachments/note-1/report.pdf");
+    expect(invokeMock).toHaveBeenCalledWith("get_attachment_size", {
+      path: ".attachments/note-1/report.pdf",
+    });
+  });
+
+  it("openAttachment -> open_attachment", () => {
+    api.openAttachment(".attachments/note-1/report.pdf");
+    expect(invokeMock).toHaveBeenCalledWith("open_attachment", {
+      path: ".attachments/note-1/report.pdf",
+    });
+  });
+
   it("createFolder -> create_folder", () => {
     api.createFolder("parent-1", "Work");
     expect(invokeMock).toHaveBeenCalledWith("create_folder", {

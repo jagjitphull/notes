@@ -9,6 +9,7 @@ import Editor from "./components/Editor.vue";
 import FirstRunSetup from "./components/FirstRunSetup.vue";
 import ContextMenu, { type ContextMenuItem } from "./components/ContextMenu.vue";
 import PromptModal from "./components/PromptModal.vue";
+import CommandPalette, { type PaletteAction } from "./components/CommandPalette.vue";
 import {
   addNoteTag,
   createFolder,
@@ -38,6 +39,7 @@ import {
 import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import { useSortPreference } from "./composables/useSortPreference";
+import { useTheme } from "./composables/useTheme";
 import { useWindowControls } from "./composables/useWindowControls";
 import type { Folder, Note, Tag } from "./types";
 
@@ -92,6 +94,7 @@ const {
   toggleMaximize: toggleMaximizeWindow,
   close: closeWindow,
 } = useWindowControls();
+const { cyclePreference } = useTheme();
 
 const loading = ref(true);
 const notesRoot = ref<string | null>(null);
@@ -118,6 +121,7 @@ const promptModal = ref<{
   confirmLabel: string;
   onConfirm: (value: string) => void;
 } | null>(null);
+const commandPaletteOpen = ref(false);
 
 let unlistenNotesChanged: UnlistenFn | null = null;
 let unlistenQuickCapture: UnlistenFn | null = null;
@@ -389,6 +393,56 @@ async function onOpenToday() {
   selectedId.value = "all";
   selectedNoteId.value = id;
   editorRef.value?.focusEditor();
+}
+
+const paletteActions = computed<PaletteAction[]>(() => [
+  { id: "new-note", label: t("commandPalette.action.newNote"), icon: "plus", run: onCreateNote },
+  { id: "today", label: t("commandPalette.action.today"), icon: "today", run: onOpenToday },
+  { id: "toggle-theme", label: t("commandPalette.action.toggleTheme"), icon: "monitor", run: cyclePreference },
+  {
+    id: "toggle-focus-mode",
+    label: t("commandPalette.action.toggleFocusMode"),
+    icon: "focus",
+    run: toggleFocusMode,
+  },
+  {
+    id: "toggle-sidebar",
+    label: t("commandPalette.action.toggleSidebar"),
+    icon: "panelLeft",
+    run: () => (sidebarCollapsed.value = !sidebarCollapsed.value),
+  },
+  {
+    id: "toggle-note-list",
+    label: t("commandPalette.action.toggleNoteList"),
+    icon: "panelList",
+    run: () => (listCollapsed.value = !listCollapsed.value),
+  },
+  { id: "all-notes", label: t("commandPalette.action.allNotes"), icon: "notesList", run: () => (selectedId.value = "all") },
+  {
+    id: "templates",
+    label: t("commandPalette.action.templates"),
+    icon: "template",
+    run: () => (selectedId.value = "templates"),
+  },
+  {
+    id: "recently-deleted",
+    label: t("commandPalette.action.recentlyDeleted"),
+    icon: "trash",
+    run: () => (selectedId.value = "recently-deleted"),
+  },
+]);
+
+function onPaletteSelectNote(id: string) {
+  selectedId.value = "all";
+  selectedNoteId.value = id;
+}
+
+function onPaletteSelectFolder(id: string) {
+  selectedId.value = id;
+}
+
+function onPaletteSelectTag(id: string) {
+  selectedId.value = `tag:${id}`;
 }
 
 async function onCreateFromTemplate(templateId: string) {
@@ -668,7 +722,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
   // the keyboard (WAI-ARIA menu/dialog patterns) - without this guard,
   // e.g. arrow keys meant to move through the menu also bubble up here
   // and silently change the selected note underneath it.
-  if (contextMenu.value || promptModal.value) return;
+  if (contextMenu.value || promptModal.value || commandPaletteOpen.value) return;
 
   const mod = e.ctrlKey || e.metaKey;
 
@@ -702,6 +756,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
   if (mod && e.key.toLowerCase() === "t") {
     e.preventDefault();
     onOpenToday();
+    return;
+  }
+
+  if (mod && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    commandPaletteOpen.value = true;
     return;
   }
 
@@ -891,6 +951,17 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       :confirm-label="promptModal.confirmLabel"
       @confirm="promptModal.onConfirm"
       @cancel="promptModal = null"
+    />
+    <CommandPalette
+      v-if="commandPaletteOpen"
+      :notes="notes"
+      :folders="folders"
+      :tags="tags"
+      :actions="paletteActions"
+      @close="commandPaletteOpen = false"
+      @select-note="onPaletteSelectNote"
+      @select-folder="onPaletteSelectFolder"
+      @select-tag="onPaletteSelectTag"
     />
   </div>
 </template>

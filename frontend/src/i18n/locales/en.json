@@ -143,6 +143,28 @@
     "newFolderTitle": "New Folder",
     "renameFolderTitle": "Rename Folder"
   },
+  "commandPalette": {
+    "title": "Command Palette",
+    "placeholder": "Search notes, folders, tags, or run a command…",
+    "noResults": "No matches",
+    "section": {
+      "action": "Commands",
+      "note": "Notes",
+      "folder": "Folders",
+      "tag": "Tags"
+    },
+    "action": {
+      "newNote": "New Note",
+      "today": "Open Today's Note",
+      "toggleTheme": "Toggle Theme",
+      "toggleFocusMode": "Toggle Focus Mode",
+      "toggleSidebar": "Toggle Sidebar",
+      "toggleNoteList": "Toggle Note List",
+      "allNotes": "Go to All Notes",
+      "recentlyDeleted": "Go to Recently Deleted",
+      "templates": "Go to Templates"
+    }
+  },
   "firstRun": {
     "heading": "Where should your notes live?",
     "subtitle": "Notes are saved as plain Markdown files in a folder you choose. Pick a folder inside Dropbox, pCloud, or any synced drive to have your notes follow you across Mac and Linux — or keep it local.",

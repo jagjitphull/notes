@@ -28,6 +28,7 @@ import {
   setFolderColor,
   setNoteDeleted,
   setNotePinned,
+  setTagColor,
   smartSearch,
   smartSearchAvailable,
 } from "./api";
@@ -39,8 +40,9 @@ import type { Folder, Note, Tag } from "./types";
 
 // A fixed accent palette (matching the system-color style Apple Notes/
 // Finder use for tags and folders) rather than a free-form color picker -
-// keeps every folder's tint one of a small, visually distinct set.
-const FOLDER_COLOR_PALETTE = [
+// keeps every folder/tag's tint one of a small, visually distinct set.
+// Shared between the folder and tag color pickers below.
+const COLOR_PALETTE = [
   { value: "#ff3b30", labelKey: "contextMenu.colorRed" },
   { value: "#ff9500", labelKey: "contextMenu.colorOrange" },
   { value: "#ffcc00", labelKey: "contextMenu.colorYellow" },
@@ -434,11 +436,11 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
       swatches: [
         {
           color: null,
-          label: t("contextMenu.folderColorNone"),
+          label: t("contextMenu.colorNone"),
           selected: !folder.color,
           action: () => setFolderColor(folder.id, null).then(refreshData),
         },
-        ...FOLDER_COLOR_PALETTE.map(({ value, labelKey }) => ({
+        ...COLOR_PALETTE.map(({ value, labelKey }) => ({
           color: value,
           label: t(labelKey),
           selected: folder.color === value,
@@ -459,6 +461,30 @@ function onFolderContextmenu(event: MouseEvent, folder: Folder) {
           alert(t("contextMenu.cantDeleteFolder", { name: folder.name, error: String(e) }));
         }
       },
+    },
+  ];
+  contextMenu.value = { x: event.clientX, y: event.clientY, items };
+}
+
+function onTagContextmenu(event: MouseEvent, tag: Tag) {
+  const items: ContextMenuItem[] = [
+    {
+      label: "",
+      action: () => {},
+      swatches: [
+        {
+          color: null,
+          label: t("contextMenu.colorNone"),
+          selected: !tag.color,
+          action: () => setTagColor(tag.id, null).then(refreshData),
+        },
+        ...COLOR_PALETTE.map(({ value, labelKey }) => ({
+          color: value,
+          label: t(labelKey),
+          selected: tag.color === value,
+          action: () => setTagColor(tag.id, value).then(refreshData),
+        })),
+      ],
     },
   ];
   contextMenu.value = { x: event.clientX, y: event.clientY, items };
@@ -672,6 +698,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :smart-search-supported="smartSearchSupported"
         @new-folder="promptNewFolder('')"
         @folder-contextmenu="onFolderContextmenu"
+        @tag-contextmenu="onTagContextmenu"
       />
       <div
         v-if="!sidebarCollapsed"

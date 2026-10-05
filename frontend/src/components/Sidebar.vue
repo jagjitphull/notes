@@ -17,6 +17,7 @@ defineProps<{
 const emit = defineEmits<{
   newFolder: [];
   folderContextmenu: [event: MouseEvent, folder: Folder];
+  tagContextmenu: [event: MouseEvent, tag: Tag];
 }>();
 
 const selectedId = defineModel<string>("selectedId", { required: true });
@@ -126,8 +127,14 @@ defineExpose({ focusSearch });
             :class="{ active: selectedId === `tag:${tag.id}` }"
             :aria-current="selectedId === `tag:${tag.id}` ? 'true' : undefined"
             @click="selectedId = `tag:${tag.id}`"
+            @contextmenu.prevent="emit('tagContextmenu', $event, tag)"
           >
-            <span class="nav-icon tag-icon" aria-hidden="true">#</span>
+            <span
+              class="nav-icon tag-icon"
+              aria-hidden="true"
+              :style="tag.color ? { color: tag.color } : undefined"
+              >#</span
+            >
             <span class="nav-label">{{ tag.name }}</span>
           </button>
         </li>

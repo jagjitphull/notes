@@ -295,6 +295,7 @@ pub fn smart_search(
 pub struct TagDto {
     pub id: String,
     pub name: String,
+    pub color: Option<String>,
 }
 
 #[tauri::command]
@@ -305,7 +306,7 @@ pub fn list_tags(db_state: State<DbState>) -> Result<Vec<TagDto>, String> {
     // last reference removed) shouldn't linger in the sidebar as a dead end.
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT t.id, t.name
+            "SELECT DISTINCT t.id, t.name, t.color
              FROM tags t
              JOIN note_tags nt ON nt.tag_id = t.id
              JOIN notes n ON n.id = nt.note_id
@@ -318,11 +319,28 @@ pub fn list_tags(db_state: State<DbState>) -> Result<Vec<TagDto>, String> {
             Ok(TagDto {
                 id: r.get(0)?,
                 name: r.get(1)?,
+                color: r.get(2)?,
             })
         })
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
+}
+
+/// `color` of `None` clears back to the default (no tint).
+#[tauri::command]
+pub fn set_tag_color(
+    db_state: State<DbState>,
+    id: String,
+    color: Option<String>,
+) -> Result<(), String> {
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tags SET color = ?1 WHERE id = ?2",
+        rusqlite::params![color, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

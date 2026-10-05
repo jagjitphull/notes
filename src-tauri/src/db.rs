@@ -21,6 +21,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0004_folder_colors",
         include_str!("../migrations/0004_folder_colors.sql"),
     ),
+    (
+        "0005_tag_colors",
+        include_str!("../migrations/0005_tag_colors.sql"),
+    ),
 ];
 
 pub struct DbState(pub Mutex<Connection>);

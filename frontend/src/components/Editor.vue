@@ -111,12 +111,11 @@ const backlinks = computed(() => {
     .map((n) => ({ id: n.id, title: n.title.trim() || t("common.newNote") }));
 });
 
-const noteTagNames = computed(
-  () =>
-    props.tags
-      .filter((t) => props.note?.tagIds.includes(t.id))
-      .map((t) => t.name)
-      .sort(),
+const noteTags = computed(() =>
+  props.tags
+    .filter((t) => props.note?.tagIds.includes(t.id))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name)),
 );
 
 const body = defineModel<string>("body", { default: "" });
@@ -570,13 +569,18 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
       </div>
 
       <div v-if="!isDeleted" class="tags-row">
-        <span v-for="name in noteTagNames" :key="name" class="tag-chip">
-          #{{ name }}
+        <span
+          v-for="tag in noteTags"
+          :key="tag.id"
+          class="tag-chip"
+          :style="tag.color ? { color: tag.color } : undefined"
+        >
+          #{{ tag.name }}
           <button
             class="tag-remove"
             :title="t('editor.removeTag')"
-            :aria-label="t('editor.removeTagLabel', { name })"
-            @click="emit('removeTag', name)"
+            :aria-label="t('editor.removeTagLabel', { name: tag.name })"
+            @click="emit('removeTag', tag.name)"
           >
             &times;
           </button>

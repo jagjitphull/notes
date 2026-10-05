@@ -93,3 +93,7 @@ export function deleteFolder(id: string): Promise<void> {
 export function setFolderColor(id: string, color: string | null): Promise<void> {
   return invoke("set_folder_color", { id, color });
 }
+
+export function setTagColor(id: string, color: string | null): Promise<void> {
+  return invoke("set_tag_color", { id, color });
+}

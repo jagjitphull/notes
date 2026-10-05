@@ -111,7 +111,7 @@
     "newSubfolder": "New Subfolder…",
     "renameEllipsis": "Rename…",
     "cantDeleteFolder": "Can't delete \"{name}\": {error}",
-    "folderColorNone": "Default Color",
+    "colorNone": "Default Color",
     "colorRed": "Red",
     "colorOrange": "Orange",
     "colorYellow": "Yellow",

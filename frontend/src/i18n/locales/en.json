@@ -19,6 +19,11 @@
     "notes": "Notes",
     "tag": "Tag"
   },
+  "graph": {
+    "navLabel": "Graph",
+    "title": "Note Graph",
+    "empty": "Nothing to show yet - create a few notes and link them with [[Title]] to see the graph."
+  },
   "topBar": {
     "toggleSidebar": "Toggle Sidebar",
     "toggleNoteList": "Toggle Note List",

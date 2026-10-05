@@ -93,6 +93,15 @@ export const icons = {
     <rect x="7" y="13" width="6" height="4.5" rx="1" stroke-width="1.3" />
     <path d="M5.5 7v2a2 2 0 0 0 2 2h2.5M14.5 7v2a2 2 0 0 0-2 2h-2.5M10 11v2" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
   `,
+  graph: `
+    <path d="M5.5 6.5 10 4l4.5 2.5M5.5 13.5 10 16l4.5-2.5M5.5 6.5v7M14.5 6.5v7M10 4v12" stroke-width="1.1" opacity="0.6" stroke-linecap="round" />
+    <circle cx="10" cy="4" r="2" fill="currentColor" stroke="none" />
+    <circle cx="5.5" cy="6.5" r="1.8" fill="currentColor" stroke="none" />
+    <circle cx="14.5" cy="6.5" r="1.8" fill="currentColor" stroke="none" />
+    <circle cx="5.5" cy="13.5" r="1.8" fill="currentColor" stroke="none" />
+    <circle cx="14.5" cy="13.5" r="1.8" fill="currentColor" stroke="none" />
+    <circle cx="10" cy="16" r="2" fill="currentColor" stroke="none" />
+  `,
   attachment: `
     <path d="M14.5 7.5 8.4 13.6a2.5 2.5 0 0 1-3.54-3.54l6.54-6.54a1.7 1.7 0 0 1 2.4 2.4l-6.37 6.37a.9.9 0 0 1-1.27-1.27l5.6-5.6" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
   `,

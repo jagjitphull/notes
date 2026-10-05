@@ -163,6 +163,16 @@ defineExpose({ focusSearch });
 
       <button
         class="nav-item"
+        :class="{ active: selectedId === 'graph' }"
+        :aria-current="selectedId === 'graph' ? 'true' : undefined"
+        @click="selectedId = 'graph'"
+      >
+        <Icon class="nav-icon" name="graph" />
+        <span class="nav-label">{{ t('graph.navLabel') }}</span>
+      </button>
+
+      <button
+        class="nav-item"
         :class="{ active: selectedId === 'recently-deleted' }"
         :aria-current="selectedId === 'recently-deleted' ? 'true' : undefined"
         @click="selectedId = 'recently-deleted'"

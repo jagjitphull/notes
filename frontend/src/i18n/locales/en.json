@@ -112,6 +112,10 @@
     },
     "backlinks": {
       "title": "Linked Mentions"
+    },
+    "outline": {
+      "title": "Outline",
+      "empty": "No headings yet"
     }
   },
   "contextMenu": {

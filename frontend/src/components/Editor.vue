@@ -223,6 +223,7 @@ const editor = useEditor({
     // made while the find bar is open (typing in the note, or a
     // replace/replace-all this same component just performed).
     if (findOpen.value) refreshMatches();
+    if (outlineOpen.value) refreshOutline();
   },
 });
 
@@ -326,6 +327,7 @@ watch(isDeleted, (deleted) => {
 
 onBeforeUnmount(() => {
   editor.value?.destroy();
+  window.removeEventListener("keydown", onOutlineKeydown);
 });
 
 // Deliberately not auto-focused on every note switch: that would steal
@@ -418,10 +420,74 @@ watch([findQuery, caseSensitive], () => {
 // Switching notes leaves findQuery/caseSensitive as-is (reopening Find on
 // the new note keeps the last search term, like a browser's find bar) but
 // drops the match list and highlights, which point at the old note's text.
+interface OutlineHeading {
+  level: number;
+  text: string;
+  pos: number;
+}
+
+const outline = ref<OutlineHeading[]>([]);
+const outlineOpen = ref(false);
+const outlineButtonRef = ref<HTMLButtonElement | null>(null);
+// Teleported to <body> (see template) so it isn't clipped by
+// .app-shell's overflow: hidden - computed from the toggle button's own
+// position since, once teleported, it's no longer a sibling of it.
+const outlinePosition = ref({ top: 0, right: 0 });
+
+// Plain ref refreshed on demand (not a computed) for the same reason as
+// `matches` above: ProseMirror's doc isn't a reactive Vue value, so a
+// computed over it wouldn't update as the user types.
+function refreshOutline() {
+  const e = editor.value;
+  if (!e) {
+    outline.value = [];
+    return;
+  }
+  const headings: OutlineHeading[] = [];
+  e.state.doc.descendants((node, pos) => {
+    if (node.type.name === "heading") {
+      headings.push({ level: node.attrs.level as number, text: node.textContent, pos });
+    }
+  });
+  outline.value = headings;
+}
+
+function jumpToHeading(pos: number) {
+  outlineOpen.value = false;
+  editor.value?.chain().focus().setTextSelection(pos).scrollIntoView().run();
+}
+
+function toggleOutline() {
+  outlineOpen.value = !outlineOpen.value;
+  if (outlineOpen.value) {
+    refreshOutline();
+    const rect = outlineButtonRef.value?.getBoundingClientRect();
+    if (rect) {
+      outlinePosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+    }
+  }
+}
+
+function onOutlineKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    outlineOpen.value = false;
+  }
+}
+
+watch(outlineOpen, (open) => {
+  if (open) {
+    window.addEventListener("keydown", onOutlineKeydown);
+  } else {
+    window.removeEventListener("keydown", onOutlineKeydown);
+  }
+});
+
 watch(
   () => props.note?.id,
   () => {
     if (findOpen.value) closeFind({ refocus: false });
+    outlineOpen.value = false;
   },
 );
 
@@ -519,6 +585,40 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
         </div>
         <div class="toolbar-right">
           <span class="editor-meta">{{ formattedDate }} &middot; {{ folderName }}</span>
+          <button
+            ref="outlineButtonRef"
+            class="icon-button"
+            :class="{ active: outlineOpen }"
+            :title="t('editor.outline.title')"
+            :aria-label="t('editor.outline.title')"
+            :aria-pressed="outlineOpen"
+            @click="toggleOutline"
+          >
+            <Icon name="outline" />
+          </button>
+          <Teleport to="body">
+            <div v-if="outlineOpen" class="outline-backdrop" @click="outlineOpen = false" />
+            <div
+              v-if="outlineOpen"
+              class="outline-dropdown"
+              role="menu"
+              :style="{ top: `${outlinePosition.top}px`, right: `${outlinePosition.right}px` }"
+            >
+              <p v-if="outline.length === 0" class="outline-empty">
+                {{ t('editor.outline.empty') }}
+              </p>
+              <button
+                v-for="(heading, index) in outline"
+                :key="index"
+                class="outline-item"
+                :class="`outline-level-${heading.level}`"
+                role="menuitem"
+                @click="jumpToHeading(heading.pos)"
+              >
+                {{ heading.text || t('common.newNote') }}
+              </button>
+            </div>
+          </Teleport>
           <button
             class="icon-button"
             :class="{ active: findOpen }"
@@ -777,6 +877,67 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   color: var(--text-secondary);
   white-space: nowrap;
   margin-right: 4px;
+}
+
+.outline-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.outline-dropdown {
+  position: fixed;
+  z-index: 1001;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-list);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 4px;
+}
+
+.outline-empty {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-item:hover {
+  background: var(--bg-hover);
+}
+
+.outline-level-1 {
+  font-weight: 600;
+}
+
+.outline-level-2 {
+  padding-left: 22px;
+}
+
+.outline-level-3 {
+  padding-left: 34px;
+  color: var(--text-secondary);
 }
 
 .find-bar {

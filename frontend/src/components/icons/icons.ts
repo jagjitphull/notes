@@ -84,6 +84,15 @@ export const icons = {
     <path d="M6.5 2.5v3M13.5 2.5v3" stroke-width="1.3" stroke-linecap="round" />
     <rect x="8.2" y="10" width="3.6" height="3.6" rx="0.6" fill="currentColor" stroke="none" />
   `,
+  math: `
+    <path d="M3 11.5l2 3 3-10h9" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+  `,
+  diagram: `
+    <rect x="2.5" y="2.5" width="6" height="4.5" rx="1" stroke-width="1.3" />
+    <rect x="11.5" y="2.5" width="6" height="4.5" rx="1" stroke-width="1.3" />
+    <rect x="7" y="13" width="6" height="4.5" rx="1" stroke-width="1.3" />
+    <path d="M5.5 7v2a2 2 0 0 0 2 2h2.5M14.5 7v2a2 2 0 0 0-2 2h-2.5M10 11v2" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+  `,
   attachment: `
     <path d="M14.5 7.5 8.4 13.6a2.5 2.5 0 0 1-3.54-3.54l6.54-6.54a1.7 1.7 0 0 1 2.4 2.4l-6.37 6.37a.9.9 0 0 1-1.27-1.27l5.6-5.6" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
   `,

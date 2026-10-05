@@ -2,16 +2,19 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Editor } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/vue-3";
+import { EditorContent, useEditor, VueNodeViewRenderer } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
 import { TableKit } from "@tiptap/extension-table";
+import { CodeBlock } from "@tiptap/extension-code-block";
 import HighlightBase from "@tiptap/extension-highlight";
 import { Markdown } from "tiptap-markdown";
 import markdownItMark from "markdown-it-mark";
+import CodeBlockView from "./CodeBlockView.vue";
+import { MathInline } from "../tiptap/mathInline";
 import Icon from "./icons/Icon.vue";
 import type { IconName } from "./icons/icons";
 import type { Folder, Note, Tag } from "../types";
@@ -133,7 +136,12 @@ const editor = useEditor({
   content: "",
   editable: !isDeleted.value,
   extensions: [
-    StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+    StarterKit.configure({ heading: { levels: [1, 2, 3] }, codeBlock: false }),
+    CodeBlock.extend({
+      addNodeView() {
+        return VueNodeViewRenderer(CodeBlockView);
+      },
+    }),
     TaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: t("editor.placeholder") }),
@@ -152,6 +160,7 @@ const editor = useEditor({
       onNavigate: handleNoteLinkNavigate,
     }),
     FileAttachment,
+    MathInline,
     TableKit.configure({ table: { resizable: false } }),
     Markdown.configure({
       html: false,
@@ -543,6 +552,36 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
       icon: "table",
       isActive: () => e.isActive("table"),
       run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    },
+    {
+      label: t("editor.toolbar.insertMath"),
+      icon: "math",
+      isActive: () => false,
+      // Inline math round-trips through plain "$latex$" text (see
+      // tiptap/mathInline.ts) rather than inserting a live node directly,
+      // the same deliberate choice as [[note links]]: it becomes a
+      // rendered node on next parse, not while still mid-edit, so it
+      // can't collide with the user still typing the expression itself.
+      run: () => {
+        const { from } = e.state.selection;
+        chain()
+          .insertContent("$$")
+          .setTextSelection(from + 1)
+          .run();
+      },
+    },
+    {
+      label: t("editor.toolbar.insertMermaid"),
+      icon: "diagram",
+      isActive: () => e.isActive("codeBlock", { language: "mermaid" }),
+      run: () =>
+        chain()
+          .insertContent({
+            type: "codeBlock",
+            attrs: { language: "mermaid" },
+            content: [{ type: "text", text: "graph TD\n    A --> B" }],
+          })
+          .run(),
     },
   ];
 });

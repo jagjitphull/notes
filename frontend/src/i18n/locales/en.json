@@ -94,7 +94,9 @@
       "deleteRow": "Delete Row",
       "addColumn": "Add Column",
       "deleteColumn": "Delete Column",
-      "deleteTable": "Delete Table"
+      "deleteTable": "Delete Table",
+      "insertMath": "Insert Math",
+      "insertMermaid": "Insert Diagram"
     },
     "find": {
       "openFind": "Find in Note",

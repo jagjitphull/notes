@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import Icon from "./components/icons/Icon.vue";
 import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
@@ -21,6 +22,7 @@ import {
   getNoteBody,
   getNotesRoot,
   getOrCreateDailyNote,
+  importMarkdownFolder,
   listFolders,
   listNotes,
   listTags,
@@ -123,6 +125,16 @@ const promptModal = ref<{
   onConfirm: (value: string) => void;
 } | null>(null);
 const commandPaletteOpen = ref(false);
+const toastMessage = ref<string | null>(null);
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showToast(message: string) {
+  toastMessage.value = message;
+  if (toastTimer !== undefined) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastMessage.value = null;
+  }, 6000);
+}
 
 let unlistenNotesChanged: UnlistenFn | null = null;
 let unlistenQuickCapture: UnlistenFn | null = null;
@@ -334,7 +346,21 @@ async function flushSave(id: string) {
   }
   if (!dirty) return;
   dirty = false;
-  await saveNoteBody(id, editingBody.value);
+  const result = await saveNoteBody(id, editingBody.value);
+  if (result.outcome === "conflict") {
+    showToast(
+      t("editor.conflict.toast", { title: result.conflictedTitle || t("common.newNote") }),
+    );
+    // Only the note currently open needs its editor content replaced with
+    // what's actually on disk now - a conflict on a note flushed while
+    // switching away from it doesn't affect what's showing right now.
+    if (selectedNoteId.value === id) {
+      suppressAutosave.value = true;
+      editingBody.value = result.originalBody;
+      await nextTick();
+      suppressAutosave.value = false;
+    }
+  }
   await refreshData();
 }
 
@@ -396,9 +422,27 @@ async function onOpenToday() {
   editorRef.value?.focusEditor();
 }
 
+async function onImportMarkdown() {
+  const dir = await openFolderDialog({ directory: true, multiple: false });
+  if (!dir || typeof dir !== "string") return;
+  try {
+    const count = await importMarkdownFolder(dir);
+    await refreshData();
+    showToast(count > 0 ? t("import.done", { count }) : t("import.noneFound"));
+  } catch (e) {
+    showToast(t("import.failed", { error: String(e) }));
+  }
+}
+
 const paletteActions = computed<PaletteAction[]>(() => [
   { id: "new-note", label: t("commandPalette.action.newNote"), icon: "plus", run: onCreateNote },
   { id: "today", label: t("commandPalette.action.today"), icon: "today", run: onOpenToday },
+  {
+    id: "import-markdown",
+    label: t("import.button"),
+    icon: "upload",
+    run: onImportMarkdown,
+  },
   { id: "toggle-theme", label: t("commandPalette.action.toggleTheme"), icon: "monitor", run: cyclePreference },
   {
     id: "toggle-focus-mode",
@@ -872,6 +916,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :smart-search-supported="smartSearchSupported"
         @new-folder="promptNewFolder('')"
         @open-today="onOpenToday"
+        @import-markdown="onImportMarkdown"
         @folder-contextmenu="onFolderContextmenu"
         @tag-contextmenu="onTagContextmenu"
       />
@@ -972,6 +1017,9 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       @select-folder="onPaletteSelectFolder"
       @select-tag="onPaletteSelectTag"
     />
+    <Teleport to="body">
+      <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>
+    </Teleport>
   </div>
 </template>
 
@@ -1053,6 +1101,22 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 .update-available:disabled {
   cursor: default;
   opacity: 0.7;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--bg-selected-strong);
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: 1000;
 }
 
 .pane-toggle.active {

@@ -8,11 +8,18 @@ use walkdir::WalkDir;
 
 use crate::embeddings;
 use crate::note_file::{self, FrontMatter};
+use crate::versions;
 
 pub type StoreResult<T> = Result<T, String>;
 
 fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
+}
+
+/// Exposed for commands.rs, which tracks each open note's last-loaded body
+/// hash to detect a sync conflict on save (see [`save_note_body`]).
+pub fn hash_body(body: &str) -> String {
+    content_hash(body)
 }
 
 fn content_hash(text: &str) -> String {
@@ -118,6 +125,73 @@ pub fn full_rescan(conn: &Connection, notes_root: &Path) -> StoreResult<()> {
     }
 
     Ok(())
+}
+
+/// Copies every .md/.markdown file found under `source` (recursively,
+/// skipping dot-prefixed directories like Obsidian's own .obsidian/
+/// config folder) into a new top-level folder inside notes_root, mirroring
+/// the source's own subfolder layout, then indexes each one - the same
+/// claiming logic `upsert_note_file` already applies to any plain file
+/// dropped into the notes folder from outside the app, since none of these
+/// will carry our own front matter. Note text survives as-is: this app's
+/// `[[Title]]` link and `![[path]]` attachment-embed syntax already
+/// matches Obsidian's, so cross-note links keep working unchanged.
+/// Non-Markdown files (images, PDFs the imported notes may reference)
+/// are not migrated - only the Markdown text itself.
+pub fn import_markdown_folder(
+    conn: &Connection,
+    notes_root: &Path,
+    source: &Path,
+) -> StoreResult<usize> {
+    let source_name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Imported".to_string());
+    let dest_root = unique_dir(notes_root, &note_file::sanitize_filename(&source_name));
+    fs::create_dir_all(&dest_root).map_err(|e| e.to_string())?;
+    ensure_folder_chain(conn, notes_root, &dest_root)?;
+
+    let mut imported = 0usize;
+    for entry in WalkDir::new(source)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !is_hidden(e))
+    {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        if ext != "md" && ext != "markdown" {
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(source) else {
+            continue;
+        };
+        let dest_dir = match rel.parent() {
+            Some(p) if !p.as_os_str().is_empty() => {
+                let d = dest_root.join(p);
+                fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+                ensure_folder_chain(conn, notes_root, &d)?;
+                d
+            }
+            _ => dest_root.clone(),
+        };
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Note");
+        let Ok(raw) = fs::read_to_string(path) else {
+            continue;
+        };
+        let dest_path = unique_filename(&dest_dir, stem, None);
+        fs::write(&dest_path, raw).map_err(|e| e.to_string())?;
+        if upsert_note_file(conn, notes_root, &dest_path)?.is_some() {
+            imported += 1;
+        }
+    }
+    Ok(imported)
 }
 
 fn all_ids(conn: &Connection, table: &str) -> StoreResult<Vec<String>> {
@@ -429,32 +503,41 @@ pub fn get_or_create_daily_note(
         .ok_or_else(|| "failed to read daily note".to_string())
 }
 
-/// Rewrites a note's body (debounced autosave from the editor). Renames the
-/// underlying file when the title — the body's first line — changed, so the
-/// file stays browsable outside the app.
-pub fn save_note_body(
-    conn: &Connection,
-    notes_root: &Path,
-    note_id: &str,
-    body: &str,
-) -> StoreResult<()> {
-    let old_rel: String = conn
+/// What a note's front matter + body currently are on disk, re-read fresh
+/// so a save always starts from the latest tags/pin-state/etc. (which may
+/// have changed from outside this call, e.g. the context menu) rather than
+/// a stale copy.
+fn read_current(conn: &Connection, notes_root: &Path, note_id: &str) -> StoreResult<(PathBuf, FrontMatter, String)> {
+    let rel: String = conn
         .query_row(
             "SELECT file_path FROM notes WHERE id = ?1",
             [note_id],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let old_path = notes_root.join(&old_rel);
-
-    let raw = fs::read_to_string(&old_path).unwrap_or_default();
+    let path = notes_root.join(&rel);
+    let raw = fs::read_to_string(&path).unwrap_or_default();
     let parsed = note_file::parse(&raw);
     let front_matter = parsed
         .front_matter
         .ok_or_else(|| "note file is missing its front matter".to_string())?;
+    Ok((path, front_matter, parsed.body))
+}
+
+/// Overwrites a note's body in place, renaming the underlying file when the
+/// title — the body's first line — changed, so the file stays browsable
+/// outside the app. Always reads the current front matter fresh (see
+/// [`read_current`]) rather than trusting a caller-supplied copy.
+fn write_body(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    body: &str,
+) -> StoreResult<()> {
+    let (old_path, front_matter, old_body) = read_current(conn, notes_root, note_id)?;
 
     let new_title = note_file::extract_title(body);
-    let old_title = note_file::extract_title(&parsed.body);
+    let old_title = note_file::extract_title(&old_body);
 
     let new_path = if new_title != old_title {
         let dir = old_path.parent().unwrap_or(notes_root);
@@ -471,6 +554,97 @@ pub fn save_note_body(
 
     upsert_note_file(conn, notes_root, &new_path)?;
     Ok(())
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SaveOutcome {
+    /// Saved in place; `hash` is the content hash of what's now on disk,
+    /// to use as `expected_hash` on the next save.
+    Saved { hash: String },
+    /// The file changed externally (e.g. synced in from another device)
+    /// since the editor last loaded it, and the edit being saved would
+    /// have silently clobbered that change. Instead of overwriting, the
+    /// edit was written to a brand-new "Conflicted Copy" note, and the
+    /// original note's file was left untouched - the caller should reload
+    /// the original note's body (now `original_body`) into the editor.
+    Conflict {
+        conflicted_note_id: String,
+        conflicted_title: String,
+        original_body: String,
+        hash: String,
+    },
+}
+
+/// Rewrites a note's body (debounced autosave from the editor), guarding
+/// against a sync conflict: if `expected_hash` (the hash of the body the
+/// editor last loaded, from [`read_note_body`]'s caller) doesn't match
+/// what's actually on disk right now, something else changed the file in
+/// the meantime and this write must not clobber it - see
+/// [`SaveOutcome::Conflict`]. Pass `None` to always save in place
+/// (skipping the check), e.g. for a deliberate action like restoring a
+/// version.
+pub fn save_note_body(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    body: &str,
+    expected_hash: Option<&str>,
+) -> StoreResult<SaveOutcome> {
+    let (old_path, _front_matter, old_body) = read_current(conn, notes_root, note_id)?;
+    let on_disk_hash = content_hash(&old_body);
+
+    if let Some(expected) = expected_hash
+        && expected != on_disk_hash
+    {
+        let dir = old_path.parent().unwrap_or(notes_root);
+        let conflicted_title = note_file::extract_title(body);
+        let stem = if conflicted_title.is_empty() {
+            "New Note"
+        } else {
+            &conflicted_title
+        };
+        let date = Utc::now().format("%Y-%m-%d").to_string();
+        let conflict_path = unique_filename(dir, &format!("{stem} (Conflicted Copy {date})"), None);
+        let conflict_fm = FrontMatter {
+            id: Uuid::new_v4().to_string(),
+            tags: Vec::new(),
+            pinned: false,
+            created_at: now_rfc3339(),
+            deleted_at: None,
+            is_template: false,
+        };
+        fs::write(&conflict_path, note_file::serialize(&conflict_fm, body)).map_err(|e| e.to_string())?;
+        let conflicted_note_id = upsert_note_file(conn, notes_root, &conflict_path)?
+            .ok_or_else(|| "failed to index conflicted copy".to_string())?;
+
+        return Ok(SaveOutcome::Conflict {
+            conflicted_note_id,
+            conflicted_title,
+            original_body: old_body,
+            hash: on_disk_hash,
+        });
+    }
+
+    versions::maybe_snapshot(notes_root, note_id, &old_body, false)?;
+    write_body(conn, notes_root, note_id, body)?;
+    Ok(SaveOutcome::Saved {
+        hash: content_hash(body),
+    })
+}
+
+/// Overwrites a note's body with one of its own past snapshots. The
+/// content it replaces is itself snapshotted first (unconditionally), so
+/// restoring is always undoable too.
+pub fn restore_version(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    timestamp: &str,
+) -> StoreResult<()> {
+    let (_, _, current_body) = read_current(conn, notes_root, note_id)?;
+    versions::maybe_snapshot(notes_root, note_id, &current_body, true)?;
+    let restored_body = versions::get(notes_root, note_id, timestamp)?;
+    write_body(conn, notes_root, note_id, &restored_body)
 }
 
 fn mutate_front_matter(
@@ -563,6 +737,7 @@ pub fn delete_note_permanently(
         .map_err(|e| e.to_string())?;
     fs::remove_file(notes_root.join(&rel)).ok();
     fs::remove_dir_all(notes_root.join(ATTACHMENTS_DIR).join(note_id)).ok();
+    versions::delete_all(notes_root, note_id);
     conn.execute("DELETE FROM notes WHERE id = ?1", [note_id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -1010,7 +1185,7 @@ mod tests {
         full_rescan(&conn, &notes_root).unwrap();
 
         let id = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id, "Grocery list\nMilk, eggs").unwrap();
+        save_note_body(&conn, &notes_root, &id, "Grocery list\nMilk, eggs", None).unwrap();
 
         let (title, file_path): (String, String) = conn
             .query_row(
@@ -1024,7 +1199,7 @@ mod tests {
         assert!(notes_root.join("Grocery list.md").exists());
 
         // Renaming the title (first line) should rename the file too.
-        save_note_body(&conn, &notes_root, &id, "Shopping list\nMilk, eggs").unwrap();
+        save_note_body(&conn, &notes_root, &id, "Shopping list\nMilk, eggs", None).unwrap();
         let file_path: String = conn
             .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1059,6 +1234,123 @@ mod tests {
     }
 
     #[test]
+    fn save_with_matching_hash_saves_in_place() {
+        let app_dir = temp_dir("conflict-app1");
+        let notes_root = temp_dir("conflict-root1");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
+        let outcome = save_note_body(&conn, &notes_root, &id, "Original\nbody", None).unwrap();
+        let hash = match outcome {
+            SaveOutcome::Saved { hash } => hash,
+            SaveOutcome::Conflict { .. } => panic!("expected a clean save"),
+        };
+
+        let outcome =
+            save_note_body(&conn, &notes_root, &id, "Original\nedited body", Some(&hash)).unwrap();
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "no conflicted copy should have been created");
+    }
+
+    #[test]
+    fn save_with_stale_hash_creates_conflicted_copy_without_clobbering() {
+        let app_dir = temp_dir("conflict-app2");
+        let notes_root = temp_dir("conflict-root2");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Original\nbody", None).unwrap();
+
+        // Simulate another device syncing in a change after this editor
+        // loaded the note but before it saved.
+        save_note_body(&conn, &notes_root, &id, "Original\nsynced in from elsewhere", None).unwrap();
+
+        let outcome = save_note_body(
+            &conn,
+            &notes_root,
+            &id,
+            "Original\nthis editor's own edit",
+            Some(&content_hash("Original\nbody")),
+        )
+        .unwrap();
+
+        let (conflicted_note_id, original_body) = match outcome {
+            SaveOutcome::Conflict {
+                conflicted_note_id,
+                original_body,
+                ..
+            } => (conflicted_note_id, original_body),
+            SaveOutcome::Saved { .. } => panic!("expected a conflict"),
+        };
+        assert_eq!(original_body, "Original\nsynced in from elsewhere");
+
+        // The original note's file must be untouched...
+        let on_disk_body = read_note_body(&notes_root, &{
+            let rel: String = conn
+                .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+                .unwrap();
+            rel
+        })
+        .unwrap();
+        assert_eq!(on_disk_body, "Original\nsynced in from elsewhere");
+
+        // ...and this editor's edit must have landed in a new note instead
+        // of being lost.
+        let conflicted_body: String = {
+            let rel: String = conn
+                .query_row(
+                    "SELECT file_path FROM notes WHERE id = ?1",
+                    [&conflicted_note_id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            read_note_body(&notes_root, &rel).unwrap()
+        };
+        assert_eq!(conflicted_body, "Original\nthis editor's own edit");
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn restore_version_brings_back_old_content_and_snapshots_current() {
+        let app_dir = temp_dir("restore-app");
+        let notes_root = temp_dir("restore-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "", false).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Version one", None).unwrap();
+        // Force a real snapshot of "Version one" before overwriting it,
+        // bypassing the normal throttle so the test doesn't depend on
+        // wall-clock timing.
+        versions::maybe_snapshot(&notes_root, &id, "Version one", true).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Version two", None).unwrap();
+
+        let snapshots = versions::list(&notes_root, &id).unwrap();
+        let old_version = snapshots
+            .iter()
+            .find(|v| v.preview == "Version one")
+            .expect("the first version should be listed");
+
+        restore_version(&conn, &notes_root, &id, &old_version.timestamp).unwrap();
+
+        let rel: String = conn
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(read_note_body(&notes_root, &rel).unwrap(), "Version one");
+
+        // Restoring must itself have snapshotted "Version two" so the
+        // restore is undoable.
+        let snapshots_after = versions::list(&notes_root, &id).unwrap();
+        assert!(snapshots_after.iter().any(|v| v.preview == "Version two"));
+    }
+
+    #[test]
     fn rescan_removes_notes_deleted_externally() {
         let app_dir = temp_dir("app2");
         let notes_root = temp_dir("root2");
@@ -1083,6 +1375,53 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn import_markdown_folder_claims_files_and_preserves_subfolders() {
+        let app_dir = temp_dir("import-app");
+        let notes_root = temp_dir("import-root");
+        let conn = db::init(&app_dir).unwrap();
+        full_rescan(&conn, &notes_root).unwrap();
+
+        let source = temp_dir("import-source");
+        fs::create_dir_all(source.join("Sub")).unwrap();
+        fs::create_dir_all(source.join(".obsidian")).unwrap();
+        fs::write(source.join("Top level.md"), "Top level\nsome text").unwrap();
+        fs::write(
+            source.join("Sub").join("Nested.md"),
+            "---\ntags: [foo]\n---\nNested\nlinks to [[Top level]]",
+        )
+        .unwrap();
+        fs::write(source.join("Sub").join("ignored.txt"), "not markdown").unwrap();
+        fs::write(source.join(".obsidian").join("config.md"), "should be skipped").unwrap();
+
+        let imported = import_markdown_folder(&conn, &notes_root, &source).unwrap();
+        assert_eq!(imported, 2, "only the two real .md files should be imported");
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+
+        let source_name = source.file_name().unwrap().to_string_lossy().to_string();
+        assert!(notes_root.join(&source_name).join("Top level.md").exists());
+        assert!(
+            notes_root
+                .join(&source_name)
+                .join("Sub")
+                .join("Nested.md")
+                .exists()
+        );
+
+        // The foreign YAML front matter must have been stripped, not kept
+        // as literal body text, and the file claimed with a fresh id.
+        let nested_body = read_note_body(
+            &notes_root,
+            &format!("{source_name}/Sub/Nested.md"),
+        )
+        .unwrap();
+        assert_eq!(nested_body, "Nested\nlinks to [[Top level]]");
     }
 
     #[test]

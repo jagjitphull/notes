@@ -178,4 +178,32 @@ describe("api.ts Tauri command bindings", () => {
     api.setNotesRoot("/home/user/notes");
     expect(invokeMock).toHaveBeenCalledWith("set_notes_root", { path: "/home/user/notes" });
   });
+
+  it("listNoteVersions -> list_note_versions", () => {
+    api.listNoteVersions("note-1");
+    expect(invokeMock).toHaveBeenCalledWith("list_note_versions", { id: "note-1" });
+  });
+
+  it("restoreNoteVersion -> restore_note_version", () => {
+    api.restoreNoteVersion("note-1", "2026-01-01T00:00:00Z");
+    expect(invokeMock).toHaveBeenCalledWith("restore_note_version", {
+      id: "note-1",
+      timestamp: "2026-01-01T00:00:00Z",
+    });
+  });
+
+  it("exportFile -> export_file", () => {
+    api.exportFile("/tmp/note.html", "<html></html>");
+    expect(invokeMock).toHaveBeenCalledWith("export_file", {
+      path: "/tmp/note.html",
+      content: "<html></html>",
+    });
+  });
+
+  it("importMarkdownFolder -> import_markdown_folder", () => {
+    api.importMarkdownFolder("/home/user/ObsidianVault");
+    expect(invokeMock).toHaveBeenCalledWith("import_markdown_folder", {
+      path: "/home/user/ObsidianVault",
+    });
+  });
 });

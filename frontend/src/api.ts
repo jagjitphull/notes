@@ -46,8 +46,40 @@ export function getNoteBody(id: string): Promise<string> {
   return invoke("get_note_body", { id });
 }
 
-export function saveNoteBody(id: string, body: string): Promise<void> {
+// A conflict means the file changed externally (e.g. synced in from
+// another device) since this editor last loaded it, so the save was
+// redirected into a new note instead of overwriting that change - see
+// store::save_note_body on the Rust side.
+export type SaveNoteBodyResult =
+  | { outcome: "saved" }
+  | { outcome: "conflict"; conflictedNoteId: string; conflictedTitle: string; originalBody: string };
+
+export function saveNoteBody(id: string, body: string): Promise<SaveNoteBodyResult> {
   return invoke("save_note_body", { id, body });
+}
+
+export interface NoteVersionInfo {
+  timestamp: string;
+  preview: string;
+}
+
+export function listNoteVersions(id: string): Promise<NoteVersionInfo[]> {
+  return invoke("list_note_versions", { id });
+}
+
+// Returns the note's body after the restore, to load straight into the
+// editor without a second round trip.
+export function restoreNoteVersion(id: string, timestamp: string): Promise<string> {
+  return invoke("restore_note_version", { id, timestamp });
+}
+
+export function exportFile(path: string, content: string): Promise<void> {
+  return invoke("export_file", { path, content });
+}
+
+// Returns the number of .md/.markdown files successfully imported.
+export function importMarkdownFolder(path: string): Promise<number> {
+  return invoke("import_markdown_folder", { path });
 }
 
 export function createNote(folderId: string, isTemplate = false): Promise<string> {

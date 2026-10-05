@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -6,9 +7,17 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::config::{self, AppConfig};
 use crate::db::DbState;
-use crate::{store, watcher};
+use crate::store::SaveOutcome;
+use crate::{store, versions, watcher};
 
 pub struct NotesRootState(pub Mutex<Option<PathBuf>>);
+
+/// Tracks, per note id, the content hash of the body each note's editor
+/// last loaded - populated by [`get_note_body`], consulted by
+/// [`save_note_body`] to detect a sync conflict (the file changed
+/// externally since that load). In-memory only: a restart simply means
+/// every note looks freshly loaded again, which is correct.
+pub struct LoadedHashState(pub Mutex<HashMap<String, String>>);
 
 #[derive(Serialize)]
 pub struct DbHealth {
@@ -367,6 +376,7 @@ pub fn set_tag_color(
 pub fn get_note_body(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    hash_state: State<LoadedHashState>,
     id: String,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
@@ -377,19 +387,120 @@ pub fn get_note_body(
         })
         .map_err(|e| e.to_string())?
     };
-    store::read_note_body(&notes_root, &rel_path)
+    let body = store::read_note_body(&notes_root, &rel_path)?;
+    hash_state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(id, store::hash_body(&body));
+    Ok(body)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase", tag = "outcome")]
+pub enum SaveNoteBodyResult {
+    Saved,
+    Conflict {
+        conflicted_note_id: String,
+        conflicted_title: String,
+        original_body: String,
+    },
 }
 
 #[tauri::command]
 pub fn save_note_body(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    hash_state: State<LoadedHashState>,
     id: String,
     body: String,
-) -> Result<(), String> {
+) -> Result<SaveNoteBodyResult, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let expected_hash = hash_state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&id)
+        .cloned();
+
+    let outcome = {
+        let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+        store::save_note_body(&conn, &notes_root, &id, &body, expected_hash.as_deref())?
+    };
+
+    let (result, new_hash) = match outcome {
+        SaveOutcome::Saved { hash } => (SaveNoteBodyResult::Saved, hash),
+        SaveOutcome::Conflict {
+            conflicted_note_id,
+            conflicted_title,
+            original_body,
+            hash,
+        } => (
+            SaveNoteBodyResult::Conflict {
+                conflicted_note_id,
+                conflicted_title,
+                original_body,
+            },
+            hash,
+        ),
+    };
+    hash_state.0.lock().map_err(|e| e.to_string())?.insert(id, new_hash);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn list_note_versions(
+    root_state: State<NotesRootState>,
+    id: String,
+) -> Result<Vec<versions::VersionInfo>, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    versions::list(&notes_root, &id)
+}
+
+#[tauri::command]
+pub fn restore_note_version(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    hash_state: State<LoadedHashState>,
+    id: String,
+    timestamp: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let rel_path: String = {
+        let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+        store::restore_version(&conn, &notes_root, &id, &timestamp)?;
+        conn.query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?
+    };
+    let body = store::read_note_body(&notes_root, &rel_path)?;
+    hash_state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(id, store::hash_body(&body));
+    Ok(body)
+}
+
+#[tauri::command]
+pub fn import_markdown_folder(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    path: String,
+) -> Result<usize, String> {
     let notes_root = require_notes_root(&root_state)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::save_note_body(&conn, &notes_root, &id, &body)
+    store::import_markdown_folder(&conn, &notes_root, std::path::Path::new(&path))
+}
+
+/// Writes arbitrary text content to a path the user picked themselves via
+/// a native save dialog (not resolved against notes_root, unlike every
+/// other file command here) - used for exporting a note as a standalone
+/// HTML file.
+#[tauri::command]
+pub fn export_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

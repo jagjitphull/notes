@@ -124,7 +124,30 @@
     "outline": {
       "title": "Outline",
       "empty": "No headings yet"
+    },
+    "history": {
+      "title": "Version History",
+      "empty": "No earlier versions yet",
+      "restore": "Restore this version",
+      "confirmRestore": "Restore this note to its {time} version? Your current content will be saved as a version too, so nothing is lost.",
+      "restored": "Restored an earlier version"
+    },
+    "conflict": {
+      "toast": "A newer version of this note was found (synced in from elsewhere). Your edit was saved separately as “{title}”."
+    },
+    "export": {
+      "button": "Export",
+      "html": "Export as HTML…",
+      "pdf": "Export as PDF…",
+      "defaultFilename": "Untitled"
     }
+  },
+  "import": {
+    "button": "Import Markdown Folder…",
+    "importing": "Importing…",
+    "done": "Imported {count} note(s).",
+    "noneFound": "No Markdown files were found in that folder.",
+    "failed": "Import failed: {error}"
   },
   "contextMenu": {
     "deletePermanently": "Delete Permanently",

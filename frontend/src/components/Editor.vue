@@ -32,7 +32,15 @@ import { exitSuggestion } from "@tiptap/suggestion";
 import type { EditorView } from "@tiptap/pm/view";
 import { extractLinkedTitles, NoteLink } from "../tiptap/noteLink";
 import { FileAttachment } from "../tiptap/fileAttachment";
-import { saveAttachment } from "../api";
+import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import {
+  saveAttachment,
+  listNoteVersions,
+  restoreNoteVersion,
+  exportFile,
+  type NoteVersionInfo,
+} from "../api";
+import { buildExportDocument } from "../export";
 
 // Round-trips through the "==highlighted==" markdown-it-mark convention
 // (same syntax Obsidian and others use), since tiptap-markdown has no
@@ -337,6 +345,7 @@ watch(isDeleted, (deleted) => {
 onBeforeUnmount(() => {
   editor.value?.destroy();
   window.removeEventListener("keydown", onOutlineKeydown);
+  window.removeEventListener("keydown", onHistoryKeydown);
 });
 
 // Deliberately not auto-focused on every note switch: that would steal
@@ -492,11 +501,132 @@ watch(outlineOpen, (open) => {
   }
 });
 
+// A version's listed label combines its relative recency with an
+// absolute timestamp, matching formattedDate's style below.
+interface HistoryEntry extends NoteVersionInfo {
+  label: string;
+}
+
+const historyOpen = ref(false);
+const historyLoading = ref(false);
+const historyVersions = ref<HistoryEntry[]>([]);
+const historyButtonRef = ref<HTMLButtonElement | null>(null);
+const historyPosition = ref({ top: 0, right: 0 });
+
+function formatVersionLabel(timestamp: string): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+async function loadHistory() {
+  const noteId = props.note?.id;
+  if (!noteId) return;
+  historyLoading.value = true;
+  try {
+    const versions = await listNoteVersions(noteId);
+    historyVersions.value = versions.map((v) => ({ ...v, label: formatVersionLabel(v.timestamp) }));
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function toggleHistory() {
+  historyOpen.value = !historyOpen.value;
+  if (historyOpen.value) {
+    loadHistory();
+    const rect = historyButtonRef.value?.getBoundingClientRect();
+    if (rect) {
+      historyPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+    }
+  }
+}
+
+async function restoreHistoryVersion(version: HistoryEntry) {
+  const noteId = props.note?.id;
+  if (!noteId) return;
+  if (!confirm(t("editor.history.confirmRestore", { time: version.label }))) return;
+  body.value = await restoreNoteVersion(noteId, version.timestamp);
+  historyOpen.value = false;
+}
+
+function onHistoryKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    historyOpen.value = false;
+  }
+}
+
+watch(historyOpen, (open) => {
+  if (open) {
+    window.addEventListener("keydown", onHistoryKeydown);
+  } else {
+    window.removeEventListener("keydown", onHistoryKeydown);
+  }
+});
+
+const exportMenuOpen = ref(false);
+const exportButtonRef = ref<HTMLButtonElement | null>(null);
+const exportPosition = ref({ top: 0, right: 0 });
+
+function toggleExportMenu() {
+  exportMenuOpen.value = !exportMenuOpen.value;
+  if (exportMenuOpen.value) {
+    const rect = exportButtonRef.value?.getBoundingClientRect();
+    if (rect) exportPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+  }
+}
+
+function sanitizeExportFilename(title: string): string {
+  const cleaned = title.replace(/[/\\:*?"<>|]/g, "-").trim().slice(0, 120);
+  return cleaned || t("editor.export.defaultFilename");
+}
+
+async function exportAsHtml() {
+  exportMenuOpen.value = false;
+  const e = editor.value;
+  if (!e || !props.note) return;
+  const title = props.note.title || t("common.newNote");
+  const html = await buildExportDocument(title, e.getHTML());
+  const path = await saveFileDialog({
+    defaultPath: `${sanitizeExportFilename(title)}.html`,
+    filters: [{ name: "HTML", extensions: ["html"] }],
+  });
+  if (!path) return;
+  await exportFile(path, html);
+}
+
+// Rendered static HTML, fed to the webview's own print dialog via a
+// detached iframe - "Save as PDF" is a destination every OS print dialog
+// offers, so this needs no PDF-rendering code of its own.
+async function exportAsPdf() {
+  exportMenuOpen.value = false;
+  const e = editor.value;
+  if (!e || !props.note) return;
+  const title = props.note.title || t("common.newNote");
+  const html = await buildExportDocument(title, e.getHTML());
+
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.top = "-10000px";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    setTimeout(() => iframe.remove(), 1000);
+  };
+  iframe.srcdoc = html;
+  document.body.appendChild(iframe);
+}
+
 watch(
   () => props.note?.id,
   () => {
     if (findOpen.value) closeFind({ refocus: false });
     outlineOpen.value = false;
+    historyOpen.value = false;
+    exportMenuOpen.value = false;
   },
 );
 
@@ -655,6 +785,68 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
                 @click="jumpToHeading(heading.pos)"
               >
                 {{ heading.text || t('common.newNote') }}
+              </button>
+            </div>
+          </Teleport>
+          <button
+            ref="historyButtonRef"
+            class="icon-button"
+            :class="{ active: historyOpen }"
+            :title="t('editor.history.title')"
+            :aria-label="t('editor.history.title')"
+            :aria-pressed="historyOpen"
+            @click="toggleHistory"
+          >
+            <Icon name="history" />
+          </button>
+          <Teleport to="body">
+            <div v-if="historyOpen" class="outline-backdrop" @click="historyOpen = false" />
+            <div
+              v-if="historyOpen"
+              class="outline-dropdown"
+              role="menu"
+              :style="{ top: `${historyPosition.top}px`, right: `${historyPosition.right}px` }"
+            >
+              <p v-if="!historyLoading && historyVersions.length === 0" class="outline-empty">
+                {{ t('editor.history.empty') }}
+              </p>
+              <button
+                v-for="version in historyVersions"
+                :key="version.timestamp"
+                class="outline-item history-item"
+                role="menuitem"
+                :title="t('editor.history.restore')"
+                @click="restoreHistoryVersion(version)"
+              >
+                <span class="history-time">{{ version.label }}</span>
+                <span class="history-preview">{{ version.preview || t('common.newNote') }}</span>
+              </button>
+            </div>
+          </Teleport>
+          <button
+            ref="exportButtonRef"
+            class="icon-button"
+            :class="{ active: exportMenuOpen }"
+            :title="t('editor.export.button')"
+            :aria-label="t('editor.export.button')"
+            :aria-pressed="exportMenuOpen"
+            @click="toggleExportMenu"
+          >
+            <Icon name="download" />
+          </button>
+          <Teleport to="body">
+            <div v-if="exportMenuOpen" class="outline-backdrop" @click="exportMenuOpen = false" />
+            <div
+              v-if="exportMenuOpen"
+              class="outline-dropdown"
+              role="menu"
+              :style="{ top: `${exportPosition.top}px`, right: `${exportPosition.right}px` }"
+            >
+              <button class="outline-item" role="menuitem" @click="exportAsHtml">
+                {{ t('editor.export.html') }}
+              </button>
+              <button class="outline-item" role="menuitem" @click="exportAsPdf">
+                {{ t('editor.export.pdf') }}
               </button>
             </div>
           </Teleport>
@@ -977,6 +1169,26 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
 .outline-level-3 {
   padding-left: 34px;
   color: var(--text-secondary);
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+
+.history-time {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.history-preview {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .find-bar {

@@ -4,6 +4,7 @@ pub mod db;
 mod embeddings;
 mod note_file;
 pub mod store;
+mod versions;
 mod watcher;
 
 use std::sync::Mutex;
@@ -86,6 +87,9 @@ pub fn run() {
             let conn = db::init(&app_data_dir).expect("failed to initialize database");
             app.manage(db::DbState(Mutex::new(conn)));
             app.manage(WatcherState(Mutex::new(None)));
+            app.manage(commands::LoadedHashState(Mutex::new(
+                std::collections::HashMap::new(),
+            )));
 
             let app_config_dir = app
                 .path()
@@ -176,6 +180,10 @@ pub fn run() {
             commands::list_tags,
             commands::get_note_body,
             commands::save_note_body,
+            commands::list_note_versions,
+            commands::restore_note_version,
+            commands::export_file,
+            commands::import_markdown_folder,
             commands::create_note,
             commands::create_note_from_template,
             commands::set_note_template,

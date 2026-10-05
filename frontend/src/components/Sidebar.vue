@@ -18,6 +18,7 @@ defineProps<{
 const emit = defineEmits<{
   newFolder: [];
   openToday: [];
+  importMarkdown: [];
   folderContextmenu: [event: MouseEvent, folder: Folder];
   tagContextmenu: [event: MouseEvent, tag: Tag];
 }>();
@@ -180,6 +181,11 @@ defineExpose({ focusSearch });
         <Icon class="nav-icon" name="trash" />
         <span class="nav-label">{{ t('common.recentlyDeleted') }}</span>
         <span class="nav-count">{{ deletedCount }}</span>
+      </button>
+
+      <button class="nav-item" @click="emit('importMarkdown')">
+        <Icon class="nav-icon" name="upload" />
+        <span class="nav-label">{{ t('import.button') }}</span>
       </button>
 
       <button

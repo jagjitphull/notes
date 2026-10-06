@@ -224,6 +224,11 @@ export const icons = {
     <path d="M10 13V3M6 7l4-4 4 4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M4 16.5h12" stroke-width="1.6" stroke-linecap="round" />
   `,
+  archive: `
+    <rect x="3" y="3.5" width="14" height="4" rx="1" stroke-width="1.3" />
+    <path d="M4 7.5v7.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7.5" stroke-width="1.3" />
+    <path d="M8.3 11h3.4" stroke-width="1.3" stroke-linecap="round" />
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

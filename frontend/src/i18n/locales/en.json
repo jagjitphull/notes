@@ -157,6 +157,12 @@
     "noneFound": "No Markdown files were found in that folder.",
     "failed": "Import failed: {error}"
   },
+  "backup": {
+    "button": "Backup All Notes…",
+    "defaultFilename": "Notes Backup {date}",
+    "done": "Backup saved.",
+    "failed": "Backup failed: {error}"
+  },
   "contextMenu": {
     "deletePermanently": "Delete Permanently",
     "confirmDeletePermanent": "Permanently delete \"{title}\"? This can't be undone.",

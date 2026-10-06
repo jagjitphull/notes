@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { open as openFolderDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import Icon from "./components/icons/Icon.vue";
 import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
@@ -21,6 +21,7 @@ import {
   deleteNotePermanently,
   getNoteBody,
   getNotesRoot,
+  exportVaultBackup,
   getOrCreateDailyNote,
   importMarkdownFolder,
   listFolders,
@@ -434,6 +435,20 @@ async function onImportMarkdown() {
   }
 }
 
+async function onExportBackup() {
+  const path = await saveFileDialog({
+    defaultPath: `${t("backup.defaultFilename", { date: todayLocalDate() })}.zip`,
+    filters: [{ name: "Zip", extensions: ["zip"] }],
+  });
+  if (!path) return;
+  try {
+    await exportVaultBackup(path);
+    showToast(t("backup.done"));
+  } catch (e) {
+    showToast(t("backup.failed", { error: String(e) }));
+  }
+}
+
 const paletteActions = computed<PaletteAction[]>(() => [
   { id: "new-note", label: t("commandPalette.action.newNote"), icon: "plus", run: onCreateNote },
   { id: "today", label: t("commandPalette.action.today"), icon: "today", run: onOpenToday },
@@ -442,6 +457,12 @@ const paletteActions = computed<PaletteAction[]>(() => [
     label: t("import.button"),
     icon: "upload",
     run: onImportMarkdown,
+  },
+  {
+    id: "export-backup",
+    label: t("backup.button"),
+    icon: "archive",
+    run: onExportBackup,
   },
   { id: "toggle-theme", label: t("commandPalette.action.toggleTheme"), icon: "monitor", run: cyclePreference },
   {
@@ -917,6 +938,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @new-folder="promptNewFolder('')"
         @open-today="onOpenToday"
         @import-markdown="onImportMarkdown"
+        @export-backup="onExportBackup"
         @folder-contextmenu="onFolderContextmenu"
         @tag-contextmenu="onTagContextmenu"
       />

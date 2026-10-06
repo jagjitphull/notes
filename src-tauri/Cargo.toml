@@ -37,3 +37,6 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-global-shortcut = "2.4.0"
 tauri-plugin-opener = "2.7.0"
+# default-features pull in bzip2/zstd/lzma/aes-crypto/zopfli - this app
+# only needs plain DEFLATE to zip up the notes folder for a local backup.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

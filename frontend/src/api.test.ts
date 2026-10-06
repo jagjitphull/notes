@@ -211,4 +211,11 @@ describe("api.ts Tauri command bindings", () => {
       path: "/home/user/ObsidianVault",
     });
   });
+
+  it("exportVaultBackup -> export_vault_backup", () => {
+    api.exportVaultBackup("/home/user/Notes Backup.zip");
+    expect(invokeMock).toHaveBeenCalledWith("export_vault_backup", {
+      path: "/home/user/Notes Backup.zip",
+    });
+  });
 });

@@ -86,6 +86,10 @@ export function importMarkdownFolder(path: string): Promise<number> {
   return invoke("import_markdown_folder", { path });
 }
 
+export function exportVaultBackup(path: string): Promise<void> {
+  return invoke("export_vault_backup", { path });
+}
+
 export function createNote(folderId: string, isTemplate = false): Promise<string> {
   return invoke("create_note", { folderId, isTemplate });
 }

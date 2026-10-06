@@ -526,6 +526,15 @@ pub fn export_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
+/// Zips the entire notes folder - every note, subfolder, attachment, and
+/// version-history file - to a path the user picked via a save dialog.
+/// See `backup::export_vault`.
+#[tauri::command]
+pub fn export_vault_backup(root_state: State<NotesRootState>, path: String) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    crate::backup::export_vault(&notes_root, std::path::Path::new(&path))
+}
+
 #[tauri::command]
 pub fn create_note(
     db_state: State<DbState>,

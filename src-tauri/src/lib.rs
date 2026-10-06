@@ -1,3 +1,4 @@
+mod backup;
 mod commands;
 pub mod config;
 pub mod db;
@@ -184,6 +185,7 @@ pub fn run() {
             commands::list_note_versions,
             commands::restore_note_version,
             commands::export_file,
+            commands::export_vault_backup,
             commands::import_markdown_folder,
             commands::create_note,
             commands::create_note_from_template,

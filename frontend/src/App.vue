@@ -983,6 +983,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :notes="notes"
         :folders="folders"
         :tags="tags"
+        :smart-search-supported="smartSearchSupported"
         @toggle-pin="onTogglePin"
         @toggle-deleted="onToggleDeleted"
         @add-tag="onAddTag"

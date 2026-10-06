@@ -42,6 +42,10 @@ export function smartSearch(query: string): Promise<Note[]> {
   return invoke("smart_search", { query });
 }
 
+export function relatedNotes(id: string): Promise<Note[]> {
+  return invoke("related_notes", { id });
+}
+
 export function getNoteBody(id: string): Promise<string> {
   return invoke("get_note_body", { id });
 }

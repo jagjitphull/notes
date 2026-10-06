@@ -983,6 +983,35 @@ pub fn ensure_embeddings_current(db: &std::sync::Mutex<Connection>) -> StoreResu
 /// See `ensure_embeddings_current` for why this takes the DB mutex
 /// instead of a `Connection`: the query embedding is also a blocking
 /// HTTP call and must not be made while holding the lock.
+fn all_note_vectors(conn: &Connection) -> StoreResult<Vec<(String, Vec<u8>)>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT ne.note_id, ne.vector
+             FROM note_embeddings ne
+             JOIN notes n ON n.id = ne.note_id
+             WHERE n.deleted_at IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+fn rank_by_similarity(target: &[f32], rows: Vec<(String, Vec<u8>)>, limit: usize) -> Vec<String> {
+    let mut scored: Vec<(String, f32)> = rows
+        .into_iter()
+        .map(|(id, bytes)| {
+            let vector = embeddings::bytes_to_vector(&bytes);
+            let score = embeddings::cosine_similarity(target, &vector);
+            (id, score)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scored.truncate(limit);
+    scored.into_iter().map(|(id, _)| id).collect()
+}
+
 pub fn smart_search(
     db: &std::sync::Mutex<Connection>,
     query: &str,
@@ -992,35 +1021,39 @@ pub fn smart_search(
 
     let query_vector = embeddings::embed(query)?;
 
-    let rows: Vec<(String, Vec<u8>)> = {
+    let rows = {
         let conn = db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT ne.note_id, ne.vector
-                 FROM note_embeddings ne
-                 JOIN notes n ON n.id = ne.note_id
-                 WHERE n.deleted_at IS NULL",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?
+        all_note_vectors(&conn)?
     };
 
-    let mut scored: Vec<(String, f32)> = rows
-        .into_iter()
-        .map(|(id, bytes)| {
-            let vector = embeddings::bytes_to_vector(&bytes);
-            let score = embeddings::cosine_similarity(&query_vector, &vector);
-            (id, score)
-        })
-        .collect();
-    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
-    scored.truncate(limit);
+    Ok(rank_by_similarity(&query_vector, rows, limit))
+}
 
-    Ok(scored.into_iter().map(|(id, _)| id).collect())
+/// Notes most semantically similar to `note_id`, ranked by cosine
+/// similarity between their stored embeddings (see `smart_search` for the
+/// same mechanism applied to a typed query instead of another note).
+/// Empty if `note_id` has no embedding yet (e.g. a blank note, or Ollama
+/// has never run) - there's nothing to compare it against.
+pub fn related_notes(
+    db: &std::sync::Mutex<Connection>,
+    note_id: &str,
+    limit: usize,
+) -> StoreResult<Vec<String>> {
+    ensure_embeddings_current(db)?;
+
+    let rows = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        all_note_vectors(&conn)?
+    };
+
+    let Some(target_bytes) = rows.iter().find(|(id, _)| id == note_id).map(|(_, v)| v.clone())
+    else {
+        return Ok(Vec::new());
+    };
+    let target_vector = embeddings::bytes_to_vector(&target_bytes);
+    let others: Vec<(String, Vec<u8>)> = rows.into_iter().filter(|(id, _)| id != note_id).collect();
+
+    Ok(rank_by_similarity(&target_vector, others, limit))
 }
 
 fn unique_path_for_name(dir: &Path, filename: &std::ffi::OsStr) -> PathBuf {
@@ -1654,6 +1687,45 @@ mod tests {
             build_fts_query("title:foo AND bar"),
             "\"title:foo\"* \"AND\"* \"bar\"*"
         );
+    }
+
+    #[test]
+    fn related_notes_ranks_by_similarity_and_excludes_self() {
+        let app_dir = temp_dir("related-app");
+        let notes_root = temp_dir("related-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id_a = create_note(&conn, &notes_root, "", false).unwrap();
+        save_note_body(&conn, &notes_root, &id_a, "Note A\nbody a", None).unwrap();
+        let id_b = create_note(&conn, &notes_root, "", false).unwrap();
+        save_note_body(&conn, &notes_root, &id_b, "Note B\nbody b", None).unwrap();
+        let id_c = create_note(&conn, &notes_root, "", false).unwrap();
+        save_note_body(&conn, &notes_root, &id_c, "Note C\nbody c", None).unwrap();
+
+        // Pre-seed embeddings whose content_hash already matches each
+        // note's current body, so ensure_embeddings_current (called by
+        // related_notes) treats them as up to date and never reaches out
+        // to Ollama - this test is about the ranking math, not the HTTP
+        // call. B's vector is deliberately close to A's, C's far from it.
+        for (id, title, body, vector) in [
+            (&id_a, "Note A", "body a", vec![1.0_f32, 0.0]),
+            (&id_b, "Note B", "body b", vec![0.9_f32, 0.1]),
+            (&id_c, "Note C", "body c", vec![0.0_f32, 1.0]),
+        ] {
+            let hash = content_hash(&format!("{title}\n\n{body}"));
+            let bytes = embeddings::vector_to_bytes(&vector);
+            conn.execute(
+                "INSERT INTO note_embeddings (note_id, model, content_hash, vector, updated_at)
+                 VALUES (?1, 'test', ?2, ?3, ?4)",
+                params![id, hash, bytes, now_rfc3339()],
+            )
+            .unwrap();
+        }
+
+        let db_mutex = std::sync::Mutex::new(conn);
+        let ranked = related_notes(&db_mutex, &id_a, 5).unwrap();
+
+        assert_eq!(ranked, vec![id_b, id_c], "B (closer vector) should rank before C, and A must not rank itself");
     }
 
     #[test]

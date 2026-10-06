@@ -255,26 +255,18 @@ pub fn smart_search_available() -> bool {
     crate::embeddings::is_available()
 }
 
-/// Semantic search over note content via local Ollama embeddings, ranked
-/// by cosine similarity (see `store::smart_search`). Errors here (almost
-/// always: Ollama isn't reachable) are meant to be caught by the frontend
-/// and silently fall back to `search_notes`.
-#[tauri::command]
-pub fn smart_search(
-    db_state: State<DbState>,
-    query: String,
+/// Looks up the full row for each of `ranked_ids`, in that same order -
+/// shared by every command that ranks notes by something other than a
+/// SQL ORDER BY (embedding similarity), so the ranking survives an
+/// IN (...) query's arbitrary row order.
+fn note_list_items_in_order(
+    conn: &rusqlite::Connection,
+    ranked_ids: Vec<String>,
 ) -> Result<Vec<NoteListItemDto>, String> {
-    let trimmed = query.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let ranked_ids = store::smart_search(&db_state.0, trimmed, 30)?;
     if ranked_ids.is_empty() {
         return Ok(Vec::new());
     }
 
-    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
     let placeholders = ranked_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql =
         format!("SELECT {NOTE_LIST_ITEM_COLUMNS} FROM notes n WHERE n.id IN ({placeholders})");
@@ -294,11 +286,42 @@ pub fn smart_search(
         .map(|dto| (dto.id.clone(), dto))
         .collect();
 
-    // Re-apply the ranking: the SQL above came back in arbitrary IN(...) order.
     Ok(ranked_ids
         .into_iter()
         .filter_map(|id| by_id.remove(&id))
         .collect())
+}
+
+/// Semantic search over note content via local Ollama embeddings, ranked
+/// by cosine similarity (see `store::smart_search`). Errors here (almost
+/// always: Ollama isn't reachable) are meant to be caught by the frontend
+/// and silently fall back to `search_notes`.
+#[tauri::command]
+pub fn smart_search(
+    db_state: State<DbState>,
+    query: String,
+) -> Result<Vec<NoteListItemDto>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let ranked_ids = store::smart_search(&db_state.0, trimmed, 30)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    note_list_items_in_order(&conn, ranked_ids)
+}
+
+/// Other notes most semantically similar to note `id` (see
+/// `store::related_notes`). Same error behavior as `smart_search`: the
+/// frontend treats a failure as "nothing to show" rather than an error.
+#[tauri::command]
+pub fn related_notes(
+    db_state: State<DbState>,
+    id: String,
+) -> Result<Vec<NoteListItemDto>, String> {
+    let ranked_ids = store::related_notes(&db_state.0, &id, 5)?;
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    note_list_items_in_order(&conn, ranked_ids)
 }
 
 #[derive(Serialize)]

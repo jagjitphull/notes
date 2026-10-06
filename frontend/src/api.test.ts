@@ -27,6 +27,11 @@ describe("api.ts Tauri command bindings", () => {
     expect(invokeMock).toHaveBeenCalledWith("smart_search", { query: "hello" });
   });
 
+  it("relatedNotes -> related_notes", () => {
+    api.relatedNotes("note-1");
+    expect(invokeMock).toHaveBeenCalledWith("related_notes", { id: "note-1" });
+  });
+
   it("smartSearchAvailable -> smart_search_available with no args", () => {
     api.smartSearchAvailable();
     expect(invokeMock).toHaveBeenCalledWith("smart_search_available");

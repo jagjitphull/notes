@@ -39,6 +39,7 @@ import {
   listNoteVersions,
   restoreNoteVersion,
   exportFile,
+  relatedNotes as fetchRelatedNotes,
   type NoteVersionInfo,
 } from "../api";
 import { buildExportDocument } from "../export";
@@ -66,6 +67,7 @@ const props = defineProps<{
   notes: Note[];
   folders: Folder[];
   tags: Tag[];
+  smartSearchSupported: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -134,6 +136,30 @@ const noteTags = computed(() =>
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name)),
 );
+
+// Unlike backlinks (derived client-side from data already on hand),
+// finding semantically related notes needs a round trip - it ranks by
+// the same Ollama embeddings Smart Search uses (see store::related_notes
+// on the Rust side), so it's only attempted while that's available.
+const relatedNotes = ref<Note[]>([]);
+
+async function refreshRelatedNotes() {
+  const noteId = props.note?.id;
+  if (!noteId || !props.smartSearchSupported) {
+    relatedNotes.value = [];
+    return;
+  }
+  try {
+    const results = await fetchRelatedNotes(noteId);
+    // The selected note may have changed again while this was in
+    // flight; a stale response arriving late must not clobber it.
+    if (props.note?.id === noteId) relatedNotes.value = results;
+  } catch {
+    relatedNotes.value = [];
+  }
+}
+
+watch(() => [props.note?.id, props.smartSearchSupported], refreshRelatedNotes, { immediate: true });
 
 const body = defineModel<string>("body", { default: "" });
 
@@ -1013,6 +1039,18 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
               <button class="backlink-item" @click="emit('navigateToNote', link.id)">
                 <Icon name="document" />
                 <span>{{ link.title }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="relatedNotes.length > 0" class="backlinks">
+          <h3 class="backlinks-title">{{ t('editor.relatedNotes.title') }}</h3>
+          <ul class="backlinks-list">
+            <li v-for="related in relatedNotes" :key="related.id">
+              <button class="backlink-item" @click="emit('navigateToNote', related.id)">
+                <Icon name="sparkle" />
+                <span>{{ related.title || t('common.newNote') }}</span>
               </button>
             </li>
           </ul>

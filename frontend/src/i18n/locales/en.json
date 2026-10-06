@@ -126,6 +126,9 @@
     "backlinks": {
       "title": "Linked Mentions"
     },
+    "relatedNotes": {
+      "title": "Related Notes"
+    },
     "outline": {
       "title": "Outline",
       "empty": "No headings yet"

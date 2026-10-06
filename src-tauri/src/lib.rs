@@ -177,6 +177,7 @@ pub fn run() {
             commands::search_notes,
             commands::smart_search_available,
             commands::smart_search,
+            commands::related_notes,
             commands::list_tags,
             commands::get_note_body,
             commands::save_note_body,

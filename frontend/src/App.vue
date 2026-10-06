@@ -1002,6 +1002,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :title="listTitle"
         :show-pinned-sections="showPinnedSections"
         :can-create="canCreate"
+        :has-templates="templateCount > 0"
         :is-trash="selectedId === 'recently-deleted'"
         :is-templates="selectedId === 'templates'"
         @create="onCreateNote"

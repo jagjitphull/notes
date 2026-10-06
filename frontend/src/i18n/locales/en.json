@@ -63,6 +63,7 @@
     "emptyTemplates": "No templates yet — right-click a note and choose \"Save as Template\".",
     "pinned": "Pinned",
     "blankNote": "Blank Note",
+    "newFromTemplate": "New from Template…",
     "smartSearchPrefix": "Smart Search: ",
     "sort": {
       "label": "Sort By",

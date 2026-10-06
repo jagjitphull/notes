@@ -9,6 +9,7 @@ const props = defineProps<{
   title: string;
   showPinnedSections: boolean;
   canCreate: boolean;
+  hasTemplates: boolean;
   isTrash: boolean;
   isTemplates: boolean;
 }>();
@@ -77,16 +78,26 @@ function preview(note: Note): string {
       >
         <Icon name="sort" />
       </button>
-      <button
-        v-if="canCreate"
-        class="icon-button new-note-button"
-        :title="t('common.newNote')"
-        :aria-label="t('common.newNote')"
-        @click="emit('create')"
-        @contextmenu.prevent="emit('createContextmenu', $event)"
-      >
-        <Icon name="plus" />
-      </button>
+      <div v-if="canCreate" class="new-note-group">
+        <button
+          class="icon-button new-note-button"
+          :title="t('common.newNote')"
+          :aria-label="t('common.newNote')"
+          @click="emit('create')"
+          @contextmenu.prevent="emit('createContextmenu', $event)"
+        >
+          <Icon name="plus" />
+        </button>
+        <button
+          v-if="hasTemplates"
+          class="icon-button new-note-caret"
+          :title="t('noteList.newFromTemplate')"
+          :aria-label="t('noteList.newFromTemplate')"
+          @click="emit('createContextmenu', $event)"
+        >
+          <Icon name="chevronDown" />
+        </button>
+      </div>
     </div>
 
     <p v-if="isTrash" class="trash-notice">
@@ -155,8 +166,14 @@ function preview(note: Note): string {
 }
 
 .sort-button,
-.new-note-button {
+.new-note-group {
   flex: 0 0 auto;
+}
+
+.new-note-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .trash-notice {

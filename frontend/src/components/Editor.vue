@@ -32,6 +32,7 @@ import { exitSuggestion } from "@tiptap/suggestion";
 import type { EditorView } from "@tiptap/pm/view";
 import { extractLinkedTitles, NoteLink } from "../tiptap/noteLink";
 import { FileAttachment } from "../tiptap/fileAttachment";
+import { buildSlashCommandItems, SlashCommand, type SlashCommandItem } from "../tiptap/slashCommand";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import {
   saveAttachment,
@@ -138,6 +139,15 @@ const body = defineModel<string>("body", { default: "" });
 
 const { t } = useI18n();
 
+// "/" menu items - each just deletes the "/query" text Suggestion matched
+// and then runs the same editor command its toolbar-button equivalent
+// does (see toolbarActions below and buildSlashCommandItems's own
+// comment). Kept separate from toolbarActions rather than derived from
+// it: marks (bold, italic, ...) don't belong in a block-insertion menu,
+// and every remaining item's `run` needs the extra deleteRange(range)
+// step toolbarActions has no reason to do.
+const slashCommandItems = computed<SlashCommandItem[]>(() => buildSlashCommandItems(t));
+
 const isDeleted = computed(() => !!props.note?.deletedAt);
 
 const editor = useEditor({
@@ -169,6 +179,7 @@ const editor = useEditor({
     }),
     FileAttachment,
     MathInline,
+    SlashCommand.configure({ getItems: () => slashCommandItems.value }),
     TableKit.configure({ table: { resizable: false } }),
     Markdown.configure({
       html: false,

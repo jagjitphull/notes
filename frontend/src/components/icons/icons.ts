@@ -161,6 +161,14 @@ export const icons = {
     <path d="M4.5 4.5v11M4.5 10h6M10.5 4.5v11" stroke-linecap="round" />
     <path d="M13.3 8.4c0-1 .9-1.7 1.9-1.7s1.9.7 1.9 1.7c0 1.2-1.2 2.2-3.8 4.6h3.8" stroke-linecap="round" stroke-linejoin="round" />
   `,
+  heading3: `
+    <path d="M4.5 4.5v11M4.5 10h6M10.5 4.5v11" stroke-linecap="round" />
+    <path d="M13.3 7.3c.35-.45.95-.7 1.6-.7.95 0 1.75.6 1.75 1.5 0 .75-.55 1.2-1.1 1.35.65.2 1.3.7 1.3 1.55 0 1-.9 1.7-1.95 1.7-.75 0-1.4-.3-1.8-.85" stroke-linecap="round" stroke-linejoin="round" />
+  `,
+  divider: `
+    <path d="M4.5 6.5v7M15.5 6.5v7" stroke-linecap="round" />
+    <path d="M4.5 10h11" stroke-linecap="round" />
+  `,
   checklist: `
     <rect x="3.2" y="4" width="4.4" height="4.4" rx="1" stroke-linejoin="round" />
     <path d="M4.3 6.2 5.3 7.2 6.8 5.4" stroke-linecap="round" stroke-linejoin="round" />

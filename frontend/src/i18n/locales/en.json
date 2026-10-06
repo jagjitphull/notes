@@ -89,6 +89,8 @@
       "highlight": "Highlight",
       "heading1": "Heading 1",
       "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "divider": "Divider",
       "checklist": "Checklist",
       "bulletList": "Bullet List",
       "numberedList": "Numbered List",
@@ -117,6 +119,9 @@
     },
     "noteLink": {
       "noMatches": "No matching notes"
+    },
+    "slashCommand": {
+      "noMatches": "No matching commands"
     },
     "backlinks": {
       "title": "Linked Mentions"

@@ -77,6 +77,12 @@
     "placeholder": "New Note",
     "contentLabel": "Note content",
     "emptyState": "No Note Selected",
+    "wordCount": {
+      "oneWord": "1 word",
+      "words": "{count} words",
+      "readingTime": "{minutes} min read"
+    },
+    "templateHint": "Tip: {'{'}{'{'}date{'}'}{'}'} and {'{'}{'{'}time{'}'}{'}'} are filled in automatically when a note is created from this template.",
     "removeTag": "Remove tag",
     "removeTagLabel": "Remove tag {name}",
     "addTag": "Add Tag",

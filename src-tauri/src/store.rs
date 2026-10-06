@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -421,6 +421,16 @@ pub fn create_note(
     write_new_note(conn, notes_root, folder_id, "", is_template)
 }
 
+/// Replaces `{{date}}`/`{{time}}` placeholders with the current local
+/// date/time - the one point a template's body is ever rewritten, so a
+/// saved template keeps its literal `{{date}}` text until actually used
+/// (see `create_note_from_template`, the only caller).
+fn substitute_template_variables(body: &str) -> String {
+    let now = Local::now();
+    body.replace("{{date}}", &now.format("%Y-%m-%d").to_string())
+        .replace("{{time}}", &now.format("%H:%M").to_string())
+}
+
 /// Copies a template note's current body into a brand-new, ordinary note -
 /// a one-time copy, not a link back to the template: editing either one
 /// afterwards never affects the other.
@@ -438,6 +448,7 @@ pub fn create_note_from_template(
         )
         .map_err(|e| e.to_string())?;
     let body = read_note_body(notes_root, &template_rel)?;
+    let body = substitute_template_variables(&body);
     write_new_note(conn, notes_root, folder_id, &body, false)
 }
 
@@ -1207,6 +1218,53 @@ mod tests {
         let mut dir = std::env::temp_dir();
         dir.push(format!("notes-store-test-{label}-{}", Uuid::new_v4()));
         dir
+    }
+
+    #[test]
+    fn substitute_template_variables_fills_in_date_and_time() {
+        let now = Local::now();
+        let rendered = substitute_template_variables("Meeting {{date}} at {{time}}\n{{date}} again");
+        assert_eq!(
+            rendered,
+            format!(
+                "Meeting {} at {}\n{} again",
+                now.format("%Y-%m-%d"),
+                now.format("%H:%M"),
+                now.format("%Y-%m-%d"),
+            )
+        );
+    }
+
+    #[test]
+    fn create_note_from_template_substitutes_variables_but_leaves_the_template_itself_alone() {
+        let app_dir = temp_dir("tmpl-app");
+        let notes_root = temp_dir("tmpl-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let template_id = create_note(&conn, &notes_root, "", true).unwrap();
+        save_note_body(&conn, &notes_root, &template_id, "Daily Log\n{{date}}: ", None).unwrap();
+
+        let new_id =
+            create_note_from_template(&conn, &notes_root, "", &template_id).unwrap();
+
+        let new_rel: String = conn
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&new_id], |r| r.get(0))
+            .unwrap();
+        let new_body = read_note_body(&notes_root, &new_rel).unwrap();
+        assert!(!new_body.contains("{{date}}"), "the new note should have a real date, not the placeholder");
+        assert!(new_body.contains(&Local::now().format("%Y-%m-%d").to_string()));
+
+        // The template's own saved file must still hold the literal
+        // placeholder - only the copy made from it gets substituted.
+        let template_rel: String = conn
+            .query_row(
+                "SELECT file_path FROM notes WHERE id = ?1",
+                [&template_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let template_body = read_note_body(&notes_root, &template_rel).unwrap();
+        assert!(template_body.contains("{{date}}"));
     }
 
     #[test]

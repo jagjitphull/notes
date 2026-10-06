@@ -225,6 +225,7 @@ const editor = useEditor({
       role: "textbox",
       "aria-multiline": "true",
       "aria-label": t("editor.contentLabel"),
+      spellcheck: "true",
     },
     handleDrop(view, event) {
       const allFiles = Array.from(event.dataTransfer?.files ?? []);
@@ -278,8 +279,22 @@ const editor = useEditor({
     // replace/replace-all this same component just performed).
     if (findOpen.value) refreshMatches();
     if (outlineOpen.value) refreshOutline();
+    refreshWordCount();
   },
 });
+
+// Plain refs refreshed on demand, same reason as `matches`/`outline`
+// above: ProseMirror's doc isn't a reactive Vue value. Reading time uses
+// the common 200-words-per-minute estimate, rounded up to whole minutes
+// (never 0, even for a one-word note).
+const wordCount = ref(0);
+const readingMinutes = ref(1);
+
+function refreshWordCount() {
+  const words = (editor.value?.getText() ?? "").trim().split(/\s+/).filter(Boolean);
+  wordCount.value = words.length;
+  readingMinutes.value = Math.max(1, Math.ceil(words.length / 200));
+}
 
 function insertImage(view: EditorView, file: File, pos: number) {
   const reader = new FileReader();
@@ -372,6 +387,9 @@ watch(body, (value) => {
     // notes via the sidebar instead of dismissing it) would otherwise keep
     // floating over content it no longer applies to.
     exitSuggestion(editor.value.view);
+    // setContent's emitUpdate: false means onUpdate (and so the word
+    // count it refreshes) doesn't fire for this programmatic change.
+    refreshWordCount();
   }
 });
 
@@ -690,6 +708,14 @@ const formattedDate = computed(() => {
   });
 });
 
+const wordCountLabel = computed(() => {
+  const words =
+    wordCount.value === 1
+      ? t("editor.wordCount.oneWord")
+      : t("editor.wordCount.words", { count: wordCount.value });
+  return `${words} · ${t("editor.wordCount.readingTime", { minutes: readingMinutes.value })}`;
+});
+
 type ToolbarAction = {
   label: string;
   icon: IconName;
@@ -790,7 +816,9 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
           </button>
         </div>
         <div class="toolbar-right">
-          <span class="editor-meta">{{ formattedDate }} &middot; {{ folderName }}</span>
+          <span class="editor-meta">
+            {{ formattedDate }} &middot; {{ folderName }} &middot; {{ wordCountLabel }}
+          </span>
           <button
             ref="outlineButtonRef"
             class="icon-button"
@@ -1028,6 +1056,8 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
           {{ t('editor.addTagButton') }}
         </button>
       </div>
+
+      <p v-if="note.isTemplate" class="template-hint">{{ t('editor.templateHint') }}</p>
 
       <div class="editor-canvas">
         <EditorContent :editor="editor" class="editor-content" />
@@ -1333,6 +1363,13 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   padding: 8px 48px 0;
   width: 100%;
   box-sizing: border-box;
+}
+
+.template-hint {
+  flex: 0 0 auto;
+  margin: 8px 48px 0;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
 }
 
 .tag-chip {

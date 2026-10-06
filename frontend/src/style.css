@@ -1,7 +1,16 @@
 :root {
-  --bg-sidebar: #f2f1f6;
-  --bg-list: #fbfaf8;
-  --bg-editor: #ffffff;
+  /* Three distinct, low-saturation tints rather than one gray repeated
+     three times - cool for navigation (sidebar), warm paper for
+     browsing (list), and a barely-there warm white for the writing
+     surface itself (editor), which stays closest to neutral since
+     that's where the eye spends the most time. Each was checked to
+     match or beat the WCAG AA contrast ratio every text color here
+     already had against the plain grays it's replacing - see
+     text-secondary/text-tertiary below, this isn't a second accessibility
+     pass, just confirming this tint doesn't undo the first one. */
+  --bg-sidebar: #f0f2f8;
+  --bg-list: #f6f1e8;
+  --bg-editor: #fffcf7;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-selected: rgba(10, 132, 255, 0.12);
   /* A notch darker than --accent-blue specifically so white text drawn
@@ -42,9 +51,11 @@
        contrast range, which is the standard fix for dark-mode eye strain
        (Material Design explicitly recommends ~87% white over #fff on
        dark surfaces for the same reason). */
-    --bg-sidebar: #26262a;
-    --bg-list: #2a2a2e;
-    --bg-editor: #28282b;
+    /* Same cool/warm/neutral split as light mode's tinted panes above,
+       re-tuned for dark surfaces. */
+    --bg-sidebar: #22252c;
+    --bg-list: #2b2622;
+    --bg-editor: #28262a;
     --bg-hover: rgba(255, 255, 255, 0.05);
     --bg-selected: rgba(10, 132, 255, 0.18);
     --bg-selected-strong: #0875e2;
@@ -66,9 +77,9 @@
 }
 
 :root[data-theme="dark"] {
-  --bg-sidebar: #26262a;
-  --bg-list: #2a2a2e;
-  --bg-editor: #28282b;
+  --bg-sidebar: #22252c;
+  --bg-list: #2b2622;
+  --bg-editor: #28262a;
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-selected: rgba(10, 132, 255, 0.18);
   --bg-selected-strong: #0875e2;

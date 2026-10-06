@@ -90,6 +90,12 @@ export function exportVaultBackup(path: string): Promise<void> {
   return invoke("export_vault_backup", { path });
 }
 
+// Returns the number of files restored. The destination folder must be
+// empty - the backend refuses to extract into one that isn't.
+export function restoreVaultBackup(zipPath: string, destDir: string): Promise<number> {
+  return invoke("restore_vault_backup", { zipPath, destDir });
+}
+
 export function createNote(folderId: string, isTemplate = false): Promise<string> {
   return invoke("create_note", { folderId, isTemplate });
 }

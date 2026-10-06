@@ -218,4 +218,12 @@ describe("api.ts Tauri command bindings", () => {
       path: "/home/user/Notes Backup.zip",
     });
   });
+
+  it("restoreVaultBackup -> restore_vault_backup", () => {
+    api.restoreVaultBackup("/home/user/Notes Backup.zip", "/home/user/Restored");
+    expect(invokeMock).toHaveBeenCalledWith("restore_vault_backup", {
+      zipPath: "/home/user/Notes Backup.zip",
+      destDir: "/home/user/Restored",
+    });
+  });
 });

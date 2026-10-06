@@ -20,6 +20,7 @@ const emit = defineEmits<{
   openToday: [];
   importMarkdown: [];
   exportBackup: [];
+  restoreBackup: [];
   folderContextmenu: [event: MouseEvent, folder: Folder];
   tagContextmenu: [event: MouseEvent, tag: Tag];
 }>();
@@ -192,6 +193,11 @@ defineExpose({ focusSearch });
       <button class="nav-item" @click="emit('exportBackup')">
         <Icon class="nav-icon" name="archive" />
         <span class="nav-label">{{ t('backup.button') }}</span>
+      </button>
+
+      <button class="nav-item" @click="emit('restoreBackup')">
+        <Icon class="nav-icon" name="restore" />
+        <span class="nav-label">{{ t('backup.restoreButton') }}</span>
       </button>
 
       <button

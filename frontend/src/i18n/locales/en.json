@@ -161,7 +161,11 @@
     "button": "Backup All Notes…",
     "defaultFilename": "Notes Backup {date}",
     "done": "Backup saved.",
-    "failed": "Backup failed: {error}"
+    "failed": "Backup failed: {error}",
+    "restoreButton": "Restore from Backup…",
+    "restoreSwitchConfirm": "Switch to the restored notes at “{path}” now? Your current notes folder is left on disk untouched, but the app will start showing this one instead.",
+    "restoreDone": "Restored {count} file(s).",
+    "restoreFailed": "Restore failed: {error}"
   },
   "contextMenu": {
     "deletePermanently": "Delete Permanently",

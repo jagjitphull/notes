@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openFolderDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import Icon from "./components/icons/Icon.vue";
 import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
@@ -25,6 +25,8 @@ import {
   getOrCreateDailyNote,
   importMarkdownFolder,
   listFolders,
+  restoreVaultBackup,
+  setNotesRoot,
   listNotes,
   listTags,
   moveNote,
@@ -424,7 +426,7 @@ async function onOpenToday() {
 }
 
 async function onImportMarkdown() {
-  const dir = await openFolderDialog({ directory: true, multiple: false });
+  const dir = await openDialog({ directory: true, multiple: false });
   if (!dir || typeof dir !== "string") return;
   try {
     const count = await importMarkdownFolder(dir);
@@ -449,6 +451,33 @@ async function onExportBackup() {
   }
 }
 
+async function onRestoreBackup() {
+  const zipPath = await openDialog({
+    multiple: false,
+    filters: [{ name: "Zip", extensions: ["zip"] }],
+  });
+  if (!zipPath || typeof zipPath !== "string") return;
+
+  const destDir = await openDialog({ directory: true, multiple: false });
+  if (!destDir || typeof destDir !== "string") return;
+
+  let count: number;
+  try {
+    count = await restoreVaultBackup(zipPath, destDir);
+  } catch (e) {
+    showToast(t("backup.restoreFailed", { error: String(e) }));
+    return;
+  }
+
+  if (confirm(t("backup.restoreSwitchConfirm", { path: destDir }))) {
+    await setNotesRoot(destDir);
+    await onSetupReady();
+    selectedId.value = "all";
+    selectedNoteId.value = null;
+  }
+  showToast(t("backup.restoreDone", { count }));
+}
+
 const paletteActions = computed<PaletteAction[]>(() => [
   { id: "new-note", label: t("commandPalette.action.newNote"), icon: "plus", run: onCreateNote },
   { id: "today", label: t("commandPalette.action.today"), icon: "today", run: onOpenToday },
@@ -463,6 +492,12 @@ const paletteActions = computed<PaletteAction[]>(() => [
     label: t("backup.button"),
     icon: "archive",
     run: onExportBackup,
+  },
+  {
+    id: "restore-backup",
+    label: t("backup.restoreButton"),
+    icon: "restore",
+    run: onRestoreBackup,
   },
   { id: "toggle-theme", label: t("commandPalette.action.toggleTheme"), icon: "monitor", run: cyclePreference },
   {
@@ -939,6 +974,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @open-today="onOpenToday"
         @import-markdown="onImportMarkdown"
         @export-backup="onExportBackup"
+        @restore-backup="onRestoreBackup"
         @folder-contextmenu="onFolderContextmenu"
         @tag-contextmenu="onTagContextmenu"
       />

@@ -186,6 +186,7 @@ pub fn run() {
             commands::restore_note_version,
             commands::export_file,
             commands::export_vault_backup,
+            commands::restore_vault_backup,
             commands::import_markdown_folder,
             commands::create_note,
             commands::create_note_from_template,

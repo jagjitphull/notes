@@ -535,6 +535,19 @@ pub fn export_vault_backup(root_state: State<NotesRootState>, path: String) -> R
     crate::backup::export_vault(&notes_root, std::path::Path::new(&path))
 }
 
+/// Extracts a vault backup zip into a destination folder the user picked
+/// (must be empty - see `backup::restore_vault`), returning the number of
+/// files restored. Doesn't touch the app's own notes folder setting -
+/// the frontend calls `set_notes_root` separately once the user confirms
+/// they want to switch to the restored notes.
+#[tauri::command]
+pub fn restore_vault_backup(zip_path: String, dest_dir: String) -> Result<usize, String> {
+    crate::backup::restore_vault(
+        std::path::Path::new(&zip_path),
+        std::path::Path::new(&dest_dir),
+    )
+}
+
 #[tauri::command]
 pub fn create_note(
     db_state: State<DbState>,

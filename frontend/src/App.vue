@@ -8,6 +8,8 @@ import Sidebar from "./components/Sidebar.vue";
 import NoteList from "./components/NoteList.vue";
 import Editor from "./components/Editor.vue";
 import FirstRunSetup from "./components/FirstRunSetup.vue";
+import VaultUnlock from "./components/VaultUnlock.vue";
+import EnableEncryptionModal from "./components/EnableEncryptionModal.vue";
 import ContextMenu, { type ContextMenuItem } from "./components/ContextMenu.vue";
 import PromptModal from "./components/PromptModal.vue";
 import CommandPalette, { type PaletteAction } from "./components/CommandPalette.vue";
@@ -41,6 +43,8 @@ import {
   setTagColor,
   smartSearch,
   smartSearchAvailable,
+  vaultStatus,
+  lockVault,
 } from "./api";
 import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
@@ -104,6 +108,12 @@ const { cyclePreference } = useTheme();
 
 const loading = ref(true);
 const notesRoot = ref<string | null>(null);
+// Both default true so an unencrypted vault's startup is completely
+// unaffected - only an actually-encrypted, still-locked vault flips
+// vaultUnlocked to false and shows VaultUnlock instead of the app.
+const vaultEncrypted = ref(false);
+const vaultUnlocked = ref(true);
+const enableEncryptionModalOpen = ref(false);
 
 const folders = ref<Folder[]>([]);
 const notes = ref<Note[]>([]);
@@ -159,6 +169,17 @@ async function refreshSmartSearchAvailability() {
   if (!available) smartSearchEnabled.value = false;
 }
 
+// Checks whether the current notes_root is an encrypted, still-locked
+// vault - called after notesRoot is first set (both at launch and right
+// after FirstRunSetup) so refreshData is never reached while locked: that
+// call just returns whatever plaintext the SQLite cache has left over from
+// the last unlocked session, which would defeat the point of locking.
+async function checkVaultStatus() {
+  const status = await vaultStatus();
+  vaultEncrypted.value = status.encrypted;
+  vaultUnlocked.value = status.unlocked;
+}
+
 onMounted(async () => {
   unlistenNotesChanged = await listen("notes-changed", () => {
     refreshData();
@@ -169,7 +190,8 @@ onMounted(async () => {
 
   notesRoot.value = await getNotesRoot();
   if (notesRoot.value) {
-    await refreshData();
+    await checkVaultStatus();
+    if (vaultUnlocked.value) await refreshData();
   }
   loading.value = false;
 
@@ -194,6 +216,42 @@ onUnmounted(() => {
 
 async function onSetupReady() {
   notesRoot.value = await getNotesRoot();
+  // Covers restoring a backup of an encrypted vault and switching to it
+  // (see onRestoreBackup below), not just FirstRunSetup's own new,
+  // never-encrypted vault - either way this must not skip straight to
+  // refreshData if what's now configured turns out to be locked.
+  await checkVaultStatus();
+  if (!vaultUnlocked.value) return;
+  await refreshData();
+}
+
+async function onVaultUnlocked() {
+  vaultUnlocked.value = true;
+  await refreshData();
+}
+
+// Clears whatever plaintext this session already fetched into memory, not
+// just the backend's unlocked key - the whole app-root (Editor included)
+// unmounts once vaultUnlocked flips false, which also runs Editor.vue's
+// own cleanup (destroying its in-memory ProseMirror document).
+async function onLockVaultAction() {
+  await lockVault();
+  notes.value = [];
+  folders.value = [];
+  tags.value = [];
+  selectedId.value = "all";
+  selectedNoteId.value = null;
+  searchQuery.value = "";
+  searchResults.value = null;
+  vaultUnlocked.value = false;
+}
+
+function onOpenEnableEncryption() {
+  enableEncryptionModalOpen.value = true;
+}
+
+async function onVaultEncryptionEnabled() {
+  vaultEncrypted.value = true;
   await refreshData();
 }
 
@@ -879,6 +937,8 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 <template>
   <FirstRunSetup v-if="!loading && !notesRoot" @ready="onSetupReady" />
 
+  <VaultUnlock v-else-if="!loading && !vaultUnlocked" @unlocked="onVaultUnlocked" />
+
   <div v-else-if="!loading" class="app-root">
     <div class="top-bar" data-tauri-drag-region="deep">
       <div class="top-bar-start">
@@ -970,11 +1030,14 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         :template-count="templateCount"
         :folder-counts="folderCounts"
         :smart-search-supported="smartSearchSupported"
+        :vault-encrypted="vaultEncrypted"
         @new-folder="promptNewFolder('')"
         @open-today="onOpenToday"
         @import-markdown="onImportMarkdown"
         @export-backup="onExportBackup"
         @restore-backup="onRestoreBackup"
+        @enable-encryption="onOpenEnableEncryption"
+        @lock-vault="onLockVaultAction"
         @folder-contextmenu="onFolderContextmenu"
         @tag-contextmenu="onTagContextmenu"
       />
@@ -1076,6 +1139,11 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       @select-note="onPaletteSelectNote"
       @select-folder="onPaletteSelectFolder"
       @select-tag="onPaletteSelectTag"
+    />
+    <EnableEncryptionModal
+      v-if="enableEncryptionModalOpen"
+      @close="enableEncryptionModalOpen = false"
+      @enabled="onVaultEncryptionEnabled"
     />
     <Teleport to="body">
       <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>

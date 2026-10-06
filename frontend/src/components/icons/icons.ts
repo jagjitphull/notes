@@ -110,6 +110,12 @@ export const icons = {
     <path d="M12.5 5.8h1.7a4.2 4.2 0 1 1 0 8.4h-1.7" stroke-linecap="round" />
     <path d="M6.7 10h6.6" stroke-linecap="round" />
   `,
+  lock: `
+    <rect x="4.5" y="9" width="11" height="8" rx="1.8" stroke-width="1.4" />
+    <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke-width="1.4" />
+    <circle cx="10" cy="12.7" r="1.1" fill="currentColor" stroke="none" />
+    <path d="M10 13.8v1.4" stroke-linecap="round" stroke-width="1.4" />
+  `,
   sort: `
     <path d="M7 4v12M4.5 6.5 7 4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M13 16V4M10.5 13.5 13 16l2.5-2.5" stroke-linecap="round" stroke-linejoin="round" />

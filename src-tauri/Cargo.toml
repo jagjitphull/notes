@@ -40,3 +40,8 @@ tauri-plugin-opener = "2.7.0"
 # default-features pull in bzip2/zstd/lzma/aes-crypto/zopfli - this app
 # only needs plain DEFLATE to zip up the notes folder for a local backup.
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# Vault encryption: Argon2id turns a password into a key; XChaCha20-Poly1305
+# (a random 24-byte nonce per encryption is safe without a counter, unlike
+# AES-GCM's 12-byte one) encrypts note content with it.
+argon2 = "0.6.0"
+chacha20poly1305 = "0.11.0"

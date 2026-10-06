@@ -178,6 +178,28 @@
     "restoreDone": "Restored {count} file(s).",
     "restoreFailed": "Restore failed: {error}"
   },
+  "vault": {
+    "unlockHeading": "Vault is Locked",
+    "unlockSubtitlePassword": "Enter your password to unlock your notes.",
+    "unlockSubtitleRecovery": "Enter your recovery key to unlock your notes.",
+    "passwordPlaceholder": "Password",
+    "confirmPasswordPlaceholder": "Confirm password",
+    "recoveryKeyPlaceholder": "Recovery key",
+    "unlockButton": "Unlock",
+    "useRecoveryKeyInstead": "Use recovery key instead",
+    "usePasswordInstead": "Use password instead",
+    "enableButton": "Encrypt Notes…",
+    "lockButton": "Lock Vault",
+    "enableTitle": "Encrypt Your Notes",
+    "enableSubtitle": "Choose a password. Every note will be encrypted on disk, readable only after unlocking with this password. There's no way to recover your notes if this password is lost, other than the recovery key on the next step.",
+    "errorPasswordRequired": "Enter a password.",
+    "errorPasswordsDontMatch": "Passwords don't match.",
+    "recoveryTitle": "Save Your Recovery Key",
+    "recoverySubtitle": "This is the only time this key will ever be shown. Save it somewhere safe - it's the only way back into your notes if you forget your password.",
+    "copyRecoveryKey": "Copy to Clipboard",
+    "copied": "Copied",
+    "confirmSaved": "I've saved this recovery key somewhere safe"
+  },
   "contextMenu": {
     "deletePermanently": "Delete Permanently",
     "confirmDeletePermanent": "Permanently delete \"{title}\"? This can't be undone.",

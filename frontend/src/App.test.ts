@@ -4,6 +4,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 const { listenMock, apiMocks, windowMock } = vi.hoisted(() => {
   const apiMocks = {
     getNotesRoot: vi.fn(),
+    vaultStatus: vi.fn(),
     listFolders: vi.fn(),
     listNotes: vi.fn(),
     listTags: vi.fn(),
@@ -53,6 +54,7 @@ describe("App.vue Smart Search", () => {
     vi.useFakeTimers();
     for (const fn of Object.values(apiMocks)) fn.mockReset();
     apiMocks.getNotesRoot.mockResolvedValue("/tmp/notes");
+    apiMocks.vaultStatus.mockResolvedValue({ encrypted: false, unlocked: true });
     apiMocks.listFolders.mockResolvedValue([]);
     apiMocks.listNotes.mockResolvedValue([]);
     apiMocks.listTags.mockResolvedValue([]);

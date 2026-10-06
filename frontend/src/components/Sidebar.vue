@@ -13,6 +13,7 @@ defineProps<{
   templateCount: number;
   folderCounts: Record<string, number>;
   smartSearchSupported: boolean;
+  vaultEncrypted: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -21,6 +22,8 @@ const emit = defineEmits<{
   importMarkdown: [];
   exportBackup: [];
   restoreBackup: [];
+  enableEncryption: [];
+  lockVault: [];
   folderContextmenu: [event: MouseEvent, folder: Folder];
   tagContextmenu: [event: MouseEvent, tag: Tag];
 }>();
@@ -198,6 +201,15 @@ defineExpose({ focusSearch });
       <button class="nav-item" @click="emit('restoreBackup')">
         <Icon class="nav-icon" name="restore" />
         <span class="nav-label">{{ t('backup.restoreButton') }}</span>
+      </button>
+
+      <button v-if="!vaultEncrypted" class="nav-item" @click="emit('enableEncryption')">
+        <Icon class="nav-icon" name="lock" />
+        <span class="nav-label">{{ t('vault.enableButton') }}</span>
+      </button>
+      <button v-else class="nav-item" @click="emit('lockVault')">
+        <Icon class="nav-icon" name="lock" />
+        <span class="nav-label">{{ t('vault.lockButton') }}</span>
       </button>
 
       <button

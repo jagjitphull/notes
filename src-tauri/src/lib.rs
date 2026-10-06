@@ -6,6 +6,8 @@ mod embeddings;
 mod note_file;
 pub mod store;
 mod versions;
+mod vault;
+mod vault_crypto;
 mod watcher;
 
 use std::sync::Mutex;
@@ -99,26 +101,34 @@ pub fn run() {
             let config = config::load(&app_config_dir);
 
             if let Some(notes_root) = config.notes_root.clone() {
-                let db_state = app.state::<db::DbState>();
-                if let Ok(conn) = db_state.0.lock() {
-                    if let Err(e) = store::full_rescan(&conn, &notes_root) {
-                        log::warn!("initial notes rescan failed: {e}");
-                    }
-                    match store::purge_expired_trash(
-                        &conn,
-                        &notes_root,
-                        store::TRASH_RETENTION_DAYS,
-                    ) {
-                        Ok(n) if n > 0 => {
-                            log::info!("purged {n} note(s) past the trash retention window")
+                // An encrypted vault can't be indexed yet - there's no key
+                // at this point, before the frontend has even shown the
+                // unlock screen. The unlock command does its own
+                // full_rescan (and trash purge) once a password or
+                // recovery key actually unlocks it.
+                if !vault::is_encrypted(&notes_root) {
+                    let db_state = app.state::<db::DbState>();
+                    if let Ok(conn) = db_state.0.lock() {
+                        if let Err(e) = store::full_rescan(&conn, &notes_root, &vault::NoteCodec::Plain) {
+                            log::warn!("initial notes rescan failed: {e}");
                         }
-                        Ok(_) => {}
-                        Err(e) => log::warn!("trash purge failed: {e}"),
+                        match store::purge_expired_trash(
+                            &conn,
+                            &notes_root,
+                            store::TRASH_RETENTION_DAYS,
+                        ) {
+                            Ok(n) if n > 0 => {
+                                log::info!("purged {n} note(s) past the trash retention window")
+                            }
+                            Ok(_) => {}
+                            Err(e) => log::warn!("trash purge failed: {e}"),
+                        }
                     }
                 }
                 watcher::restart(app.handle(), notes_root.clone());
             }
             app.manage(NotesRootState(Mutex::new(config.notes_root)));
+            app.manage(vault::VaultState::new());
 
             // System tray: lets the app keep running (and its file watcher
             // keep syncing) after the window is closed, same as most tray
@@ -207,6 +217,11 @@ pub fn run() {
             commands::delete_folder,
             commands::set_folder_color,
             commands::set_tag_color,
+            commands::vault_status,
+            commands::enable_vault_encryption,
+            commands::unlock_vault_with_password,
+            commands::unlock_vault_with_recovery_key,
+            commands::lock_vault,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

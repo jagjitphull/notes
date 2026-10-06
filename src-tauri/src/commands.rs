@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -8,9 +8,25 @@ use tauri::{AppHandle, Manager, State};
 use crate::config::{self, AppConfig};
 use crate::db::DbState;
 use crate::store::SaveOutcome;
-use crate::{store, versions, watcher};
+use crate::vault::{NoteCodec, VaultState};
+use crate::{store, vault, versions, watcher};
 
 pub struct NotesRootState(pub Mutex<Option<PathBuf>>);
+
+/// The codec to read/write this notes_root's note files with: `Plain` if
+/// it isn't an encrypted vault at all, `Encrypted` with the session's
+/// unlocked key if it is and has been unlocked. Refuses (rather than
+/// guessing) if it's encrypted but still locked - every command that
+/// touches note content calls this before touching any, so a locked vault
+/// can't be read from or written to at all, let alone have plaintext
+/// accidentally written into it.
+fn require_codec(vault_state: &State<VaultState>, notes_root: &Path) -> Result<NoteCodec, String> {
+    if !vault::is_encrypted(notes_root) {
+        return Ok(NoteCodec::Plain);
+    }
+    let key = vault_state.0.lock().map_err(|e| e.to_string())?;
+    key.map(NoteCodec::Encrypted).ok_or_else(|| "vault is locked".to_string())
+}
 
 /// Tracks, per note id, the content hash of the body each note's editor
 /// last loaded - populated by [`get_note_body`], consulted by
@@ -112,9 +128,12 @@ pub fn set_notes_root(
     )
     .map_err(|e| e.to_string())?;
 
-    {
+    // An encrypted vault can't be indexed here - there's no key yet, before
+    // the frontend has shown the unlock screen for it. The unlock command
+    // does its own full_rescan (and trash purge) once it actually unlocks.
+    if !vault::is_encrypted(&path) {
         let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-        store::full_rescan(&conn, &path)?;
+        store::full_rescan(&conn, &path, &NoteCodec::Plain)?;
         store::purge_expired_trash(&conn, &path, store::TRASH_RETENTION_DAYS)?;
     }
 
@@ -399,10 +418,12 @@ pub fn set_tag_color(
 pub fn get_note_body(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     hash_state: State<LoadedHashState>,
     id: String,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let rel_path: String = {
         let conn = db_state.0.lock().map_err(|e| e.to_string())?;
         conn.query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
@@ -410,7 +431,7 @@ pub fn get_note_body(
         })
         .map_err(|e| e.to_string())?
     };
-    let body = store::read_note_body(&notes_root, &rel_path)?;
+    let body = store::read_note_body(&notes_root, &rel_path, &codec)?;
     hash_state
         .0
         .lock()
@@ -434,11 +455,13 @@ pub enum SaveNoteBodyResult {
 pub fn save_note_body(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     hash_state: State<LoadedHashState>,
     id: String,
     body: String,
 ) -> Result<SaveNoteBodyResult, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let expected_hash = hash_state
         .0
         .lock()
@@ -448,7 +471,7 @@ pub fn save_note_body(
 
     let outcome = {
         let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-        store::save_note_body(&conn, &notes_root, &id, &body, expected_hash.as_deref())?
+        store::save_note_body(&conn, &notes_root, &id, &body, expected_hash.as_deref(), &codec)?
     };
 
     let (result, new_hash) = match outcome {
@@ -484,20 +507,22 @@ pub fn list_note_versions(
 pub fn restore_note_version(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     hash_state: State<LoadedHashState>,
     id: String,
     timestamp: String,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let rel_path: String = {
         let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-        store::restore_version(&conn, &notes_root, &id, &timestamp)?;
+        store::restore_version(&conn, &notes_root, &id, &timestamp, &codec)?;
         conn.query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
             r.get(0)
         })
         .map_err(|e| e.to_string())?
     };
-    let body = store::read_note_body(&notes_root, &rel_path)?;
+    let body = store::read_note_body(&notes_root, &rel_path, &codec)?;
     hash_state
         .0
         .lock()
@@ -510,11 +535,13 @@ pub fn restore_note_version(
 pub fn import_markdown_folder(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     path: String,
 ) -> Result<usize, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::import_markdown_folder(&conn, &notes_root, std::path::Path::new(&path))
+    store::import_markdown_folder(&conn, &notes_root, std::path::Path::new(&path), &codec)
 }
 
 /// Writes arbitrary text content to a path the user picked themselves via
@@ -552,95 +579,111 @@ pub fn restore_vault_backup(zip_path: String, dest_dir: String) -> Result<usize,
 pub fn create_note(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     folder_id: String,
     is_template: bool,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::create_note(&conn, &notes_root, &folder_id, is_template)
+    store::create_note(&conn, &notes_root, &folder_id, is_template, &codec)
 }
 
 #[tauri::command]
 pub fn create_note_from_template(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     folder_id: String,
     template_id: String,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::create_note_from_template(&conn, &notes_root, &folder_id, &template_id)
+    store::create_note_from_template(&conn, &notes_root, &folder_id, &template_id, &codec)
 }
 
 #[tauri::command]
 pub fn set_note_template(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     is_template: bool,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::set_template(&conn, &notes_root, &id, is_template)
+    store::set_template(&conn, &notes_root, &id, is_template, &codec)
 }
 
 #[tauri::command]
 pub fn get_or_create_daily_note(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     date: String,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::get_or_create_daily_note(&conn, &notes_root, &date)
+    store::get_or_create_daily_note(&conn, &notes_root, &date, &codec)
 }
 
 #[tauri::command]
 pub fn set_note_pinned(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     pinned: bool,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::set_pinned(&conn, &notes_root, &id, pinned)
+    store::set_pinned(&conn, &notes_root, &id, pinned, &codec)
 }
 
 #[tauri::command]
 pub fn add_note_tag(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     tag_name: String,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::add_tag_to_note(&conn, &notes_root, &id, &tag_name)
+    store::add_tag_to_note(&conn, &notes_root, &id, &tag_name, &codec)
 }
 
 #[tauri::command]
 pub fn remove_note_tag(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     tag_name: String,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::remove_tag_from_note(&conn, &notes_root, &id, &tag_name)
+    store::remove_tag_from_note(&conn, &notes_root, &id, &tag_name, &codec)
 }
 
 #[tauri::command]
 pub fn set_note_deleted(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     deleted: bool,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::set_deleted(&conn, &notes_root, &id, deleted)
+    store::set_deleted(&conn, &notes_root, &id, deleted, &codec)
 }
 
 #[tauri::command]
@@ -658,12 +701,14 @@ pub fn delete_note_permanently(
 pub fn move_note(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     folder_id: String,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::move_note(&conn, &notes_root, &id, &folder_id)
+    store::move_note(&conn, &notes_root, &id, &folder_id, &codec)
 }
 
 #[tauri::command]
@@ -715,6 +760,94 @@ pub fn open_external_link(app: AppHandle, url: String) -> Result<(), String> {
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultStatus {
+    pub encrypted: bool,
+    pub unlocked: bool,
+}
+
+#[tauri::command]
+pub fn vault_status(root_state: State<NotesRootState>, vault_state: State<VaultState>) -> Result<VaultStatus, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let encrypted = vault::is_encrypted(&notes_root);
+    let unlocked = !encrypted || vault_state.0.lock().map_err(|e| e.to_string())?.is_some();
+    Ok(VaultStatus { encrypted, unlocked })
+}
+
+/// Turns on encryption for the current (not-yet-encrypted) vault: creates
+/// its keyring, re-encrypts every existing note in place, and unlocks the
+/// new vault for the rest of this session. Returns the recovery key,
+/// formatted for display - this is the only time it's ever recoverable, so
+/// the frontend must show it to the user before this resolves into
+/// anything else happening.
+#[tauri::command]
+pub fn enable_vault_encryption(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
+    password: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let (vault_key, recovery_key) = vault::enable(&notes_root, &password)?;
+
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::migrate_to_encrypted(&conn, &notes_root, &vault_key)?;
+    drop(conn);
+
+    *vault_state.0.lock().map_err(|e| e.to_string())? = Some(vault_key);
+    Ok(recovery_key)
+}
+
+/// Shared by both unlock commands: once a key is recovered (by whichever
+/// means), stores it for the session and re-indexes the vault, which the
+/// locked startup/notes-root-selection path deliberately skipped.
+fn finish_unlock(
+    db_state: &State<DbState>,
+    notes_root: &Path,
+    vault_state: &State<VaultState>,
+    vault_key: [u8; 32],
+) -> Result<(), String> {
+    *vault_state.0.lock().map_err(|e| e.to_string())? = Some(vault_key);
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    store::full_rescan(&conn, notes_root, &NoteCodec::Encrypted(vault_key))?;
+    store::purge_expired_trash(&conn, notes_root, store::TRASH_RETENTION_DAYS)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unlock_vault_with_password(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
+    password: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let vault_key = vault::unlock_with_password(&notes_root, &password)?;
+    finish_unlock(&db_state, &notes_root, &vault_state, vault_key)
+}
+
+#[tauri::command]
+pub fn unlock_vault_with_recovery_key(
+    db_state: State<DbState>,
+    root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
+    recovery_key: String,
+) -> Result<(), String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let vault_key = vault::unlock_with_recovery_key(&notes_root, &recovery_key)?;
+    finish_unlock(&db_state, &notes_root, &vault_state, vault_key)
+}
+
+/// Clears the session's unlocked key, so the vault needs its password (or
+/// recovery key) again - a deliberate action from the UI, since this app
+/// otherwise only ever prompts once per launch.
+#[tauri::command]
+pub fn lock_vault(vault_state: State<VaultState>) -> Result<(), String> {
+    *vault_state.0.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -753,12 +886,14 @@ pub fn create_folder(
 pub fn rename_folder(
     db_state: State<DbState>,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
     name: String,
 ) -> Result<String, String> {
     let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
     let conn = db_state.0.lock().map_err(|e| e.to_string())?;
-    store::rename_folder(&conn, &notes_root, &id, &name)
+    store::rename_folder(&conn, &notes_root, &id, &name, &codec)
 }
 
 #[tauri::command]

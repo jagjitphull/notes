@@ -233,4 +233,35 @@ describe("api.ts Tauri command bindings", () => {
       url: "https://example.com",
     });
   });
+
+  it("vaultStatus -> vault_status", () => {
+    api.vaultStatus();
+    expect(invokeMock).toHaveBeenCalledWith("vault_status");
+  });
+
+  it("enableVaultEncryption -> enable_vault_encryption", () => {
+    api.enableVaultEncryption("hunter2");
+    expect(invokeMock).toHaveBeenCalledWith("enable_vault_encryption", {
+      password: "hunter2",
+    });
+  });
+
+  it("unlockVaultWithPassword -> unlock_vault_with_password", () => {
+    api.unlockVaultWithPassword("hunter2");
+    expect(invokeMock).toHaveBeenCalledWith("unlock_vault_with_password", {
+      password: "hunter2",
+    });
+  });
+
+  it("unlockVaultWithRecoveryKey -> unlock_vault_with_recovery_key", () => {
+    api.unlockVaultWithRecoveryKey("AB12-CD34");
+    expect(invokeMock).toHaveBeenCalledWith("unlock_vault_with_recovery_key", {
+      recoveryKey: "AB12-CD34",
+    });
+  });
+
+  it("lockVault -> lock_vault", () => {
+    api.lockVault();
+    expect(invokeMock).toHaveBeenCalledWith("lock_vault");
+  });
 });

@@ -7,7 +7,8 @@ use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::db::DbState;
-use crate::store;
+use crate::vault::{NoteCodec, VaultState};
+use crate::{store, vault};
 
 pub struct WatcherState(pub Mutex<Option<Debouncer<RecommendedWatcher>>>);
 
@@ -24,9 +25,23 @@ pub fn restart(app: &AppHandle, notes_root: PathBuf) {
             if res.is_err() {
                 return;
             }
+            // A locked encrypted vault can't be re-indexed (there's no key
+            // to decrypt titles/previews with) - skip silently rather than
+            // erroring on every external change until it's unlocked. The
+            // unlock command does its own full_rescan right away, so
+            // nothing stays stale once that happens.
+            let codec = if vault::is_encrypted(&notes_root) {
+                match *app_handle.state::<VaultState>().0.lock().expect("vault mutex poisoned") {
+                    Some(key) => NoteCodec::Encrypted(key),
+                    None => return,
+                }
+            } else {
+                NoteCodec::Plain
+            };
+
             let db_state = app_handle.state::<DbState>();
             let conn = db_state.0.lock().expect("db mutex poisoned");
-            if let Err(e) = store::full_rescan(&conn, &notes_root) {
+            if let Err(e) = store::full_rescan(&conn, &notes_root, &codec) {
                 log::warn!("rescan after file change failed: {e}");
             }
             drop(conn);

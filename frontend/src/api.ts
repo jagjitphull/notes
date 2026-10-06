@@ -165,6 +165,31 @@ export function openExternalLink(url: string): Promise<void> {
   return invoke("open_external_link", { url });
 }
 
+export interface VaultStatus {
+  encrypted: boolean;
+  unlocked: boolean;
+}
+
+export function vaultStatus(): Promise<VaultStatus> {
+  return invoke("vault_status");
+}
+
+export function enableVaultEncryption(password: string): Promise<string> {
+  return invoke("enable_vault_encryption", { password });
+}
+
+export function unlockVaultWithPassword(password: string): Promise<void> {
+  return invoke("unlock_vault_with_password", { password });
+}
+
+export function unlockVaultWithRecoveryKey(recoveryKey: string): Promise<void> {
+  return invoke("unlock_vault_with_recovery_key", { recoveryKey });
+}
+
+export function lockVault(): Promise<void> {
+  return invoke("lock_vault");
+}
+
 export function createFolder(parentId: string, name: string): Promise<string> {
   return invoke("create_folder", { parentId, name });
 }

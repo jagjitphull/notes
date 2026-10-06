@@ -8,6 +8,7 @@ use walkdir::WalkDir;
 
 use crate::embeddings;
 use crate::note_file::{self, FrontMatter};
+use crate::vault::NoteCodec;
 use crate::versions;
 
 pub type StoreResult<T> = Result<T, String>;
@@ -72,7 +73,7 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
 /// Re-walks the whole notes root, upserting every folder/note found and
 /// dropping any DB row whose file/directory no longer exists on disk (e.g.
 /// deleted from another synced device). Safe to call repeatedly.
-pub fn full_rescan(conn: &Connection, notes_root: &Path) -> StoreResult<()> {
+pub fn full_rescan(conn: &Connection, notes_root: &Path, codec: &NoteCodec) -> StoreResult<()> {
     fs::create_dir_all(notes_root).map_err(|e| e.to_string())?;
 
     conn.execute(
@@ -104,8 +105,8 @@ pub fn full_rescan(conn: &Connection, notes_root: &Path) -> StoreResult<()> {
             )
             .map_err(|e| e.to_string())?;
             seen_folder_ids.push(id);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("md")
-            && let Some(id) = upsert_note_file(conn, notes_root, path)?
+        } else if path.extension().and_then(|e| e.to_str()) == Some(codec.extension())
+            && let Some(id) = upsert_note_file(conn, notes_root, path, codec)?
         {
             seen_note_ids.push(id);
         }
@@ -127,6 +128,42 @@ pub fn full_rescan(conn: &Connection, notes_root: &Path) -> StoreResult<()> {
     Ok(())
 }
 
+/// Encrypts every existing plaintext note in place - the one-time step
+/// `enable_vault_encryption` takes right after creating the vault's keyring.
+/// `full_rescan`s first (Plain) so every file has front matter and an id to
+/// migrate by, then again (Encrypted) at the end to pick up the new .menc
+/// paths. Collects the list of .md files before touching any of them,
+/// rather than mutating while `WalkDir` is still iterating the directory
+/// it's rewriting.
+pub fn migrate_to_encrypted(conn: &Connection, notes_root: &Path, vault_key: &[u8; 32]) -> StoreResult<usize> {
+    full_rescan(conn, notes_root, &NoteCodec::Plain)?;
+
+    let md_paths: Vec<PathBuf> = WalkDir::new(notes_root)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|e| !is_hidden(e))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+        .map(|e| e.path().to_path_buf())
+        .collect();
+
+    let codec = NoteCodec::Encrypted(*vault_key);
+    let mut migrated = 0usize;
+    for path in md_paths {
+        let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let Some(front_matter) = note_file::parse(&raw).front_matter else {
+            continue;
+        };
+        let new_path = path.with_file_name(format!("{}.menc", front_matter.id));
+        codec.write(&new_path, &raw)?;
+        fs::remove_file(&path).map_err(|e| e.to_string())?;
+        migrated += 1;
+    }
+
+    full_rescan(conn, notes_root, &codec)?;
+    Ok(migrated)
+}
+
 /// Copies every .md/.markdown file found under `source` (recursively,
 /// skipping dot-prefixed directories like Obsidian's own .obsidian/
 /// config folder) into a new top-level folder inside notes_root, mirroring
@@ -142,6 +179,7 @@ pub fn import_markdown_folder(
     conn: &Connection,
     notes_root: &Path,
     source: &Path,
+    codec: &NoteCodec,
 ) -> StoreResult<usize> {
     let source_name = source
         .file_name()
@@ -185,9 +223,29 @@ pub fn import_markdown_folder(
         let Ok(raw) = fs::read_to_string(path) else {
             continue;
         };
-        let dest_path = unique_filename(&dest_dir, stem, None);
-        fs::write(&dest_path, raw).map_err(|e| e.to_string())?;
-        if upsert_note_file(conn, notes_root, &dest_path)?.is_some() {
+        // An encrypted vault's notes are always claimed (front matter
+        // attached) up front, under an id-based filename chosen before the
+        // normal claiming logic in upsert_note_file ever runs - that logic
+        // assigns an id only *after* the file already exists on disk, which
+        // is too late to have picked an id-based name for it.
+        let dest_path = if codec.is_encrypted() {
+            let front_matter = FrontMatter {
+                id: Uuid::new_v4().to_string(),
+                tags: Vec::new(),
+                pinned: false,
+                created_at: now_rfc3339(),
+                deleted_at: None,
+                is_template: false,
+            };
+            let path = dest_dir.join(format!("{}.{}", front_matter.id, codec.extension()));
+            codec.write(&path, &note_file::serialize(&front_matter, &raw))?;
+            path
+        } else {
+            let path = unique_filename(&dest_dir, stem, None);
+            codec.write(&path, &raw)?;
+            path
+        };
+        if upsert_note_file(conn, notes_root, &dest_path, codec)?.is_some() {
             imported += 1;
         }
     }
@@ -211,8 +269,9 @@ pub fn upsert_note_file(
     conn: &Connection,
     notes_root: &Path,
     path: &Path,
+    codec: &NoteCodec,
 ) -> StoreResult<Option<String>> {
-    let Ok(raw) = fs::read_to_string(path) else {
+    let Ok(raw) = codec.read(path) else {
         return Ok(None);
     };
     let parsed = note_file::parse(&raw);
@@ -220,6 +279,13 @@ pub fn upsert_note_file(
     let front_matter = match parsed.front_matter {
         Some(fm) => fm,
         None => {
+            // An encrypted vault's own files always carry front matter -
+            // this app is the only thing that ever writes a .menc file. If
+            // it's missing, the file is corrupted; skip it rather than
+            // guessing.
+            if codec.is_encrypted() {
+                return Ok(None);
+            }
             let fm = FrontMatter {
                 id: Uuid::new_v4().to_string(),
                 tags: Vec::new(),
@@ -229,7 +295,7 @@ pub fn upsert_note_file(
                 is_template: false,
             };
             let content = note_file::serialize(&fm, &parsed.body);
-            fs::write(path, &content).map_err(|e| e.to_string())?;
+            codec.write(path, &content)?;
             fm
         }
     };
@@ -385,6 +451,7 @@ fn write_new_note(
     folder_id: &str,
     body: &str,
     is_template: bool,
+    codec: &NoteCodec,
 ) -> StoreResult<String> {
     let dir = if folder_id.is_empty() {
         notes_root.to_path_buf()
@@ -394,9 +461,6 @@ fn write_new_note(
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     ensure_folder_chain(conn, notes_root, &dir)?;
 
-    let title = note_file::extract_title(body);
-    let stem = if title.is_empty() { "New Note" } else { &title };
-    let path = unique_filename(&dir, stem, None);
     let front_matter = FrontMatter {
         id: Uuid::new_v4().to_string(),
         tags: Vec::new(),
@@ -405,10 +469,20 @@ fn write_new_note(
         deleted_at: None,
         is_template,
     };
+    // An encrypted note's filename is the id, not the title - the title
+    // only exists inside the encrypted content, so it can never be the
+    // filename.
+    let path = if codec.is_encrypted() {
+        dir.join(format!("{}.{}", front_matter.id, codec.extension()))
+    } else {
+        let title = note_file::extract_title(body);
+        let stem = if title.is_empty() { "New Note" } else { &title };
+        unique_filename(&dir, stem, None)
+    };
     let content = note_file::serialize(&front_matter, body);
-    fs::write(&path, content).map_err(|e| e.to_string())?;
+    codec.write(&path, &content)?;
 
-    upsert_note_file(conn, notes_root, &path)?;
+    upsert_note_file(conn, notes_root, &path, codec)?;
     Ok(front_matter.id)
 }
 
@@ -417,8 +491,9 @@ pub fn create_note(
     notes_root: &Path,
     folder_id: &str,
     is_template: bool,
+    codec: &NoteCodec,
 ) -> StoreResult<String> {
-    write_new_note(conn, notes_root, folder_id, "", is_template)
+    write_new_note(conn, notes_root, folder_id, "", is_template, codec)
 }
 
 /// Replaces `{{date}}`/`{{time}}` placeholders with the current local
@@ -439,6 +514,7 @@ pub fn create_note_from_template(
     notes_root: &Path,
     folder_id: &str,
     template_id: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<String> {
     let template_rel: String = conn
         .query_row(
@@ -447,9 +523,9 @@ pub fn create_note_from_template(
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let body = read_note_body(notes_root, &template_rel)?;
+    let body = read_note_body(notes_root, &template_rel, codec)?;
     let body = substitute_template_variables(&body);
-    write_new_note(conn, notes_root, folder_id, &body, false)
+    write_new_note(conn, notes_root, folder_id, &body, false, codec)
 }
 
 pub fn set_template(
@@ -457,8 +533,9 @@ pub fn set_template(
     notes_root: &Path,
     note_id: &str,
     is_template: bool,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
-    mutate_front_matter(conn, notes_root, note_id, |fm| fm.is_template = is_template)
+    mutate_front_matter(conn, notes_root, note_id, codec, |fm| fm.is_template = is_template)
 }
 
 const DAILY_NOTES_FOLDER: &str = "Daily Notes";
@@ -489,6 +566,7 @@ pub fn get_or_create_daily_note(
     conn: &Connection,
     notes_root: &Path,
     date: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<String> {
     if !is_valid_date(date) {
         return Err("invalid date".to_string());
@@ -497,7 +575,11 @@ pub fn get_or_create_daily_note(
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     ensure_folder_chain(conn, notes_root, &dir)?;
 
-    let path = dir.join(format!("{date}.md"));
+    // A date isn't sensitive the way a title is, so unlike other encrypted
+    // notes this filename stays date-based rather than id-based - it's
+    // what makes "today's note already exists" a simple file-existence
+    // check instead of needing a DB round trip.
+    let path = dir.join(format!("{date}.{}", codec.extension()));
     if !path.exists() {
         let front_matter = FrontMatter {
             id: Uuid::new_v4().to_string(),
@@ -508,9 +590,9 @@ pub fn get_or_create_daily_note(
             is_template: false,
         };
         let content = note_file::serialize(&front_matter, "");
-        fs::write(&path, content).map_err(|e| e.to_string())?;
+        codec.write(&path, &content)?;
     }
-    upsert_note_file(conn, notes_root, &path)?
+    upsert_note_file(conn, notes_root, &path, codec)?
         .ok_or_else(|| "failed to read daily note".to_string())
 }
 
@@ -518,7 +600,12 @@ pub fn get_or_create_daily_note(
 /// so a save always starts from the latest tags/pin-state/etc. (which may
 /// have changed from outside this call, e.g. the context menu) rather than
 /// a stale copy.
-fn read_current(conn: &Connection, notes_root: &Path, note_id: &str) -> StoreResult<(PathBuf, FrontMatter, String)> {
+fn read_current(
+    conn: &Connection,
+    notes_root: &Path,
+    note_id: &str,
+    codec: &NoteCodec,
+) -> StoreResult<(PathBuf, FrontMatter, String)> {
     let rel: String = conn
         .query_row(
             "SELECT file_path FROM notes WHERE id = ?1",
@@ -527,7 +614,7 @@ fn read_current(conn: &Connection, notes_root: &Path, note_id: &str) -> StoreRes
         )
         .map_err(|e| e.to_string())?;
     let path = notes_root.join(&rel);
-    let raw = fs::read_to_string(&path).unwrap_or_default();
+    let raw = codec.read(&path).unwrap_or_default();
     let parsed = note_file::parse(&raw);
     let front_matter = parsed
         .front_matter
@@ -544,26 +631,33 @@ fn write_body(
     notes_root: &Path,
     note_id: &str,
     body: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
-    let (old_path, front_matter, old_body) = read_current(conn, notes_root, note_id)?;
+    let (old_path, front_matter, old_body) = read_current(conn, notes_root, note_id, codec)?;
 
-    let new_title = note_file::extract_title(body);
-    let old_title = note_file::extract_title(&old_body);
-
-    let new_path = if new_title != old_title {
-        let dir = old_path.parent().unwrap_or(notes_root);
-        unique_filename(dir, &new_title, Some(old_path.as_path()))
-    } else {
+    // An encrypted note's filename is its id, not its title (see
+    // write_new_note) - it never needs renaming when the title changes,
+    // since the title was never the filename to begin with.
+    let new_path = if codec.is_encrypted() {
         old_path.clone()
+    } else {
+        let new_title = note_file::extract_title(body);
+        let old_title = note_file::extract_title(&old_body);
+        if new_title != old_title {
+            let dir = old_path.parent().unwrap_or(notes_root);
+            unique_filename(dir, &new_title, Some(old_path.as_path()))
+        } else {
+            old_path.clone()
+        }
     };
 
     let content = note_file::serialize(&front_matter, body);
-    fs::write(&new_path, content).map_err(|e| e.to_string())?;
+    codec.write(&new_path, &content)?;
     if new_path != old_path {
         fs::remove_file(&old_path).ok();
     }
 
-    upsert_note_file(conn, notes_root, &new_path)?;
+    upsert_note_file(conn, notes_root, &new_path, codec)?;
     Ok(())
 }
 
@@ -600,8 +694,9 @@ pub fn save_note_body(
     note_id: &str,
     body: &str,
     expected_hash: Option<&str>,
+    codec: &NoteCodec,
 ) -> StoreResult<SaveOutcome> {
-    let (old_path, _front_matter, old_body) = read_current(conn, notes_root, note_id)?;
+    let (old_path, _front_matter, old_body) = read_current(conn, notes_root, note_id, codec)?;
     let on_disk_hash = content_hash(&old_body);
 
     if let Some(expected) = expected_hash
@@ -609,13 +704,6 @@ pub fn save_note_body(
     {
         let dir = old_path.parent().unwrap_or(notes_root);
         let conflicted_title = note_file::extract_title(body);
-        let stem = if conflicted_title.is_empty() {
-            "New Note"
-        } else {
-            &conflicted_title
-        };
-        let date = Utc::now().format("%Y-%m-%d").to_string();
-        let conflict_path = unique_filename(dir, &format!("{stem} (Conflicted Copy {date})"), None);
         let conflict_fm = FrontMatter {
             id: Uuid::new_v4().to_string(),
             tags: Vec::new(),
@@ -624,8 +712,19 @@ pub fn save_note_body(
             deleted_at: None,
             is_template: false,
         };
-        fs::write(&conflict_path, note_file::serialize(&conflict_fm, body)).map_err(|e| e.to_string())?;
-        let conflicted_note_id = upsert_note_file(conn, notes_root, &conflict_path)?
+        let conflict_path = if codec.is_encrypted() {
+            dir.join(format!("{}.{}", conflict_fm.id, codec.extension()))
+        } else {
+            let stem = if conflicted_title.is_empty() {
+                "New Note"
+            } else {
+                &conflicted_title
+            };
+            let date = Utc::now().format("%Y-%m-%d").to_string();
+            unique_filename(dir, &format!("{stem} (Conflicted Copy {date})"), None)
+        };
+        codec.write(&conflict_path, &note_file::serialize(&conflict_fm, body))?;
+        let conflicted_note_id = upsert_note_file(conn, notes_root, &conflict_path, codec)?
             .ok_or_else(|| "failed to index conflicted copy".to_string())?;
 
         return Ok(SaveOutcome::Conflict {
@@ -637,7 +736,7 @@ pub fn save_note_body(
     }
 
     versions::maybe_snapshot(notes_root, note_id, &old_body, false)?;
-    write_body(conn, notes_root, note_id, body)?;
+    write_body(conn, notes_root, note_id, body, codec)?;
     Ok(SaveOutcome::Saved {
         hash: content_hash(body),
     })
@@ -651,17 +750,19 @@ pub fn restore_version(
     notes_root: &Path,
     note_id: &str,
     timestamp: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
-    let (_, _, current_body) = read_current(conn, notes_root, note_id)?;
+    let (_, _, current_body) = read_current(conn, notes_root, note_id, codec)?;
     versions::maybe_snapshot(notes_root, note_id, &current_body, true)?;
     let restored_body = versions::get(notes_root, note_id, timestamp)?;
-    write_body(conn, notes_root, note_id, &restored_body)
+    write_body(conn, notes_root, note_id, &restored_body, codec)
 }
 
 fn mutate_front_matter(
     conn: &Connection,
     notes_root: &Path,
     note_id: &str,
+    codec: &NoteCodec,
     f: impl FnOnce(&mut FrontMatter),
 ) -> StoreResult<()> {
     let rel: String = conn
@@ -672,15 +773,15 @@ fn mutate_front_matter(
         )
         .map_err(|e| e.to_string())?;
     let path = notes_root.join(&rel);
-    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let raw = codec.read(&path)?;
     let parsed = note_file::parse(&raw);
     let mut front_matter = parsed
         .front_matter
         .ok_or_else(|| "note file is missing its front matter".to_string())?;
     f(&mut front_matter);
     let content = note_file::serialize(&front_matter, &parsed.body);
-    fs::write(&path, content).map_err(|e| e.to_string())?;
-    upsert_note_file(conn, notes_root, &path)?;
+    codec.write(&path, &content)?;
+    upsert_note_file(conn, notes_root, &path, codec)?;
     Ok(())
 }
 
@@ -689,8 +790,9 @@ pub fn set_pinned(
     notes_root: &Path,
     note_id: &str,
     pinned: bool,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
-    mutate_front_matter(conn, notes_root, note_id, |fm| fm.pinned = pinned)
+    mutate_front_matter(conn, notes_root, note_id, codec, |fm| fm.pinned = pinned)
 }
 
 pub fn set_deleted(
@@ -698,8 +800,9 @@ pub fn set_deleted(
     notes_root: &Path,
     note_id: &str,
     deleted: bool,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
-    mutate_front_matter(conn, notes_root, note_id, |fm| {
+    mutate_front_matter(conn, notes_root, note_id, codec, |fm| {
         fm.deleted_at = if deleted { Some(now_rfc3339()) } else { None };
     })
 }
@@ -709,12 +812,13 @@ pub fn add_tag_to_note(
     notes_root: &Path,
     note_id: &str,
     tag_name: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
     let tag_name = tag_name.trim().to_string();
     if tag_name.is_empty() {
         return Err("tag name can't be empty".to_string());
     }
-    mutate_front_matter(conn, notes_root, note_id, |fm| {
+    mutate_front_matter(conn, notes_root, note_id, codec, |fm| {
         if !fm.tags.iter().any(|t| t.eq_ignore_ascii_case(&tag_name)) {
             fm.tags.push(tag_name);
         }
@@ -726,8 +830,9 @@ pub fn remove_tag_from_note(
     notes_root: &Path,
     note_id: &str,
     tag_name: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
-    mutate_front_matter(conn, notes_root, note_id, |fm| {
+    mutate_front_matter(conn, notes_root, note_id, codec, |fm| {
         fm.tags.retain(|t| !t.eq_ignore_ascii_case(tag_name));
     })
 }
@@ -784,8 +889,8 @@ pub fn purge_expired_trash(
     Ok(ids.len())
 }
 
-pub fn read_note_body(notes_root: &Path, rel_file_path: &str) -> StoreResult<String> {
-    let raw = fs::read_to_string(notes_root.join(rel_file_path)).map_err(|e| e.to_string())?;
+pub fn read_note_body(notes_root: &Path, rel_file_path: &str, codec: &NoteCodec) -> StoreResult<String> {
+    let raw = codec.read(&notes_root.join(rel_file_path))?;
     Ok(note_file::parse(&raw).body)
 }
 
@@ -1106,6 +1211,7 @@ pub fn move_note(
     notes_root: &Path,
     note_id: &str,
     target_folder_id: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
     let old_rel: String = conn
         .query_row(
@@ -1134,7 +1240,7 @@ pub fn move_note(
     let new_path = unique_path_for_name(&target_dir, file_name);
 
     fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
-    upsert_note_file(conn, notes_root, &new_path)?;
+    upsert_note_file(conn, notes_root, &new_path, codec)?;
     Ok(())
 }
 
@@ -1166,6 +1272,7 @@ pub fn rename_folder(
     notes_root: &Path,
     folder_id: &str,
     new_name: &str,
+    codec: &NoteCodec,
 ) -> StoreResult<String> {
     if folder_id.is_empty() {
         return Err("the root Notes folder can't be renamed".to_string());
@@ -1175,7 +1282,7 @@ pub fn rename_folder(
     let new_dir = unique_dir(&parent_dir, &note_file::sanitize_filename(new_name));
 
     fs::rename(&old_dir, &new_dir).map_err(|e| e.to_string())?;
-    full_rescan(conn, notes_root)?;
+    full_rescan(conn, notes_root, codec)?;
     Ok(dir_id(notes_root, &new_dir))
 }
 
@@ -1241,16 +1348,16 @@ mod tests {
         let notes_root = temp_dir("tmpl-root");
         let conn = db::init(&app_dir).unwrap();
 
-        let template_id = create_note(&conn, &notes_root, "", true).unwrap();
-        save_note_body(&conn, &notes_root, &template_id, "Daily Log\n{{date}}: ", None).unwrap();
+        let template_id = create_note(&conn, &notes_root, "", true, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &template_id, "Daily Log\n{{date}}: ", None, &NoteCodec::Plain).unwrap();
 
         let new_id =
-            create_note_from_template(&conn, &notes_root, "", &template_id).unwrap();
+            create_note_from_template(&conn, &notes_root, "", &template_id, &NoteCodec::Plain).unwrap();
 
         let new_rel: String = conn
             .query_row("SELECT file_path FROM notes WHERE id = ?1", [&new_id], |r| r.get(0))
             .unwrap();
-        let new_body = read_note_body(&notes_root, &new_rel).unwrap();
+        let new_body = read_note_body(&notes_root, &new_rel, &NoteCodec::Plain).unwrap();
         assert!(!new_body.contains("{{date}}"), "the new note should have a real date, not the placeholder");
         assert!(new_body.contains(&Local::now().format("%Y-%m-%d").to_string()));
 
@@ -1263,7 +1370,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        let template_body = read_note_body(&notes_root, &template_rel).unwrap();
+        let template_body = read_note_body(&notes_root, &template_rel, &NoteCodec::Plain).unwrap();
         assert!(template_body.contains("{{date}}"));
     }
 
@@ -1273,10 +1380,10 @@ mod tests {
         let notes_root = temp_dir("root");
         let conn = db::init(&app_dir).unwrap();
 
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id, "Grocery list\nMilk, eggs", None).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Grocery list\nMilk, eggs", None, &NoteCodec::Plain).unwrap();
 
         let (title, file_path): (String, String) = conn
             .query_row(
@@ -1290,7 +1397,7 @@ mod tests {
         assert!(notes_root.join("Grocery list.md").exists());
 
         // Renaming the title (first line) should rename the file too.
-        save_note_body(&conn, &notes_root, &id, "Shopping list\nMilk, eggs", None).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Shopping list\nMilk, eggs", None, &NoteCodec::Plain).unwrap();
         let file_path: String = conn
             .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1300,7 +1407,7 @@ mod tests {
         assert!(!notes_root.join("Grocery list.md").exists());
         assert!(notes_root.join("Shopping list.md").exists());
 
-        set_pinned(&conn, &notes_root, &id, true).unwrap();
+        set_pinned(&conn, &notes_root, &id, true, &NoteCodec::Plain).unwrap();
         let pinned: bool = conn
             .query_row("SELECT is_pinned FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1308,7 +1415,7 @@ mod tests {
             .unwrap();
         assert!(pinned);
 
-        set_deleted(&conn, &notes_root, &id, true).unwrap();
+        set_deleted(&conn, &notes_root, &id, true, &NoteCodec::Plain).unwrap();
         let deleted_at: Option<String> = conn
             .query_row("SELECT deleted_at FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1317,7 +1424,7 @@ mod tests {
         assert!(deleted_at.is_some());
 
         // A full rescan should reproduce the exact same index state.
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
             .unwrap();
@@ -1330,15 +1437,15 @@ mod tests {
         let notes_root = temp_dir("conflict-root1");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
-        let outcome = save_note_body(&conn, &notes_root, &id, "Original\nbody", None).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        let outcome = save_note_body(&conn, &notes_root, &id, "Original\nbody", None, &NoteCodec::Plain).unwrap();
         let hash = match outcome {
             SaveOutcome::Saved { hash } => hash,
             SaveOutcome::Conflict { .. } => panic!("expected a clean save"),
         };
 
         let outcome =
-            save_note_body(&conn, &notes_root, &id, "Original\nedited body", Some(&hash)).unwrap();
+            save_note_body(&conn, &notes_root, &id, "Original\nedited body", Some(&hash), &NoteCodec::Plain).unwrap();
         assert!(matches!(outcome, SaveOutcome::Saved { .. }));
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
@@ -1352,12 +1459,12 @@ mod tests {
         let notes_root = temp_dir("conflict-root2");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id, "Original\nbody", None).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Original\nbody", None, &NoteCodec::Plain).unwrap();
 
         // Simulate another device syncing in a change after this editor
         // loaded the note but before it saved.
-        save_note_body(&conn, &notes_root, &id, "Original\nsynced in from elsewhere", None).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Original\nsynced in from elsewhere", None, &NoteCodec::Plain).unwrap();
 
         let outcome = save_note_body(
             &conn,
@@ -1365,6 +1472,7 @@ mod tests {
             &id,
             "Original\nthis editor's own edit",
             Some(&content_hash("Original\nbody")),
+            &NoteCodec::Plain,
         )
         .unwrap();
 
@@ -1384,7 +1492,7 @@ mod tests {
                 .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
                 .unwrap();
             rel
-        })
+        }, &NoteCodec::Plain)
         .unwrap();
         assert_eq!(on_disk_body, "Original\nsynced in from elsewhere");
 
@@ -1398,7 +1506,7 @@ mod tests {
                     |r| r.get(0),
                 )
                 .unwrap();
-            read_note_body(&notes_root, &rel).unwrap()
+            read_note_body(&notes_root, &rel, &NoteCodec::Plain).unwrap()
         };
         assert_eq!(conflicted_body, "Original\nthis editor's own edit");
 
@@ -1414,13 +1522,13 @@ mod tests {
         let notes_root = temp_dir("restore-root");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id, "Version one", None).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Version one", None, &NoteCodec::Plain).unwrap();
         // Force a real snapshot of "Version one" before overwriting it,
         // bypassing the normal throttle so the test doesn't depend on
         // wall-clock timing.
         versions::maybe_snapshot(&notes_root, &id, "Version one", true).unwrap();
-        save_note_body(&conn, &notes_root, &id, "Version two", None).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Version two", None, &NoteCodec::Plain).unwrap();
 
         let snapshots = versions::list(&notes_root, &id).unwrap();
         let old_version = snapshots
@@ -1428,12 +1536,12 @@ mod tests {
             .find(|v| v.preview == "Version one")
             .expect("the first version should be listed");
 
-        restore_version(&conn, &notes_root, &id, &old_version.timestamp).unwrap();
+        restore_version(&conn, &notes_root, &id, &old_version.timestamp, &NoteCodec::Plain).unwrap();
 
         let rel: String = conn
             .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
             .unwrap();
-        assert_eq!(read_note_body(&notes_root, &rel).unwrap(), "Version one");
+        assert_eq!(read_note_body(&notes_root, &rel, &NoteCodec::Plain).unwrap(), "Version one");
 
         // Restoring must itself have snapshotted "Version two" so the
         // restore is undoable.
@@ -1447,8 +1555,8 @@ mod tests {
         let notes_root = temp_dir("root2");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
-        full_rescan(&conn, &notes_root).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
             .unwrap();
@@ -1461,7 +1569,7 @@ mod tests {
             .unwrap();
         fs::remove_file(notes_root.join(file_path)).unwrap();
 
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
             .unwrap();
@@ -1473,7 +1581,7 @@ mod tests {
         let app_dir = temp_dir("import-app");
         let notes_root = temp_dir("import-root");
         let conn = db::init(&app_dir).unwrap();
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
 
         let source = temp_dir("import-source");
         fs::create_dir_all(source.join("Sub")).unwrap();
@@ -1487,7 +1595,7 @@ mod tests {
         fs::write(source.join("Sub").join("ignored.txt"), "not markdown").unwrap();
         fs::write(source.join(".obsidian").join("config.md"), "should be skipped").unwrap();
 
-        let imported = import_markdown_folder(&conn, &notes_root, &source).unwrap();
+        let imported = import_markdown_folder(&conn, &notes_root, &source, &NoteCodec::Plain).unwrap();
         assert_eq!(imported, 2, "only the two real .md files should be imported");
 
         let count: i64 = conn
@@ -1510,6 +1618,7 @@ mod tests {
         let nested_body = read_note_body(
             &notes_root,
             &format!("{source_name}/Sub/Nested.md"),
+            &NoteCodec::Plain,
         )
         .unwrap();
         assert_eq!(nested_body, "Nested\nlinks to [[Top level]]");
@@ -1521,7 +1630,7 @@ mod tests {
         let notes_root = temp_dir("root4");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "Work", false).unwrap();
+        let id = create_note(&conn, &notes_root, "Work", false, &NoteCodec::Plain).unwrap();
 
         let folder_id: String = conn
             .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| {
@@ -1531,7 +1640,7 @@ mod tests {
         assert_eq!(folder_id, "Work");
 
         // A rescan (the path the app actually runs on startup) must agree.
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
         let folder_id_after_rescan: String = conn
             .query_row("SELECT folder_id FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1548,7 +1657,7 @@ mod tests {
         fs::write(notes_root.join("External.md"), "External note\nBody text").unwrap();
 
         let conn = db::init(&app_dir).unwrap();
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
 
         let title: String = conn
             .query_row("SELECT title FROM notes", [], |r| r.get(0))
@@ -1565,11 +1674,11 @@ mod tests {
         let notes_root = temp_dir("root8");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
-        add_tag_to_note(&conn, &notes_root, &id, "Work").unwrap();
-        add_tag_to_note(&conn, &notes_root, &id, "urgent").unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        add_tag_to_note(&conn, &notes_root, &id, "Work", &NoteCodec::Plain).unwrap();
+        add_tag_to_note(&conn, &notes_root, &id, "urgent", &NoteCodec::Plain).unwrap();
         // Case-insensitive de-dup: adding "work" again should be a no-op.
-        add_tag_to_note(&conn, &notes_root, &id, "work").unwrap();
+        add_tag_to_note(&conn, &notes_root, &id, "work", &NoteCodec::Plain).unwrap();
 
         let tag_names: Vec<String> = {
             let mut stmt = conn
@@ -1586,7 +1695,7 @@ mod tests {
         };
         assert_eq!(tag_names, vec!["Work".to_string(), "urgent".to_string()]);
 
-        remove_tag_from_note(&conn, &notes_root, &id, "Work").unwrap();
+        remove_tag_from_note(&conn, &notes_root, &id, "Work", &NoteCodec::Plain).unwrap();
         let tag_names_after: Vec<String> = {
             let mut stmt = conn
                 .prepare(
@@ -1632,14 +1741,14 @@ mod tests {
         let app_dir = temp_dir("app5");
         let notes_root = temp_dir("root5");
         let conn = db::init(&app_dir).unwrap();
-        full_rescan(&conn, &notes_root).unwrap();
+        full_rescan(&conn, &notes_root, &NoteCodec::Plain).unwrap();
 
         let work_id = create_folder(&conn, &notes_root, "", "Work").unwrap();
         assert_eq!(work_id, "Work");
         assert!(notes_root.join("Work").is_dir());
 
-        let note_id = create_note(&conn, &notes_root, "", false).unwrap();
-        move_note(&conn, &notes_root, &note_id, &work_id).unwrap();
+        let note_id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        move_note(&conn, &notes_root, &note_id, &work_id, &NoteCodec::Plain).unwrap();
         let folder_id: String = conn
             .query_row(
                 "SELECT folder_id FROM notes WHERE id = ?1",
@@ -1652,7 +1761,7 @@ mod tests {
         // Can't delete a non-empty folder.
         assert!(delete_folder(&conn, &notes_root, &work_id).is_err());
 
-        let renamed_id = rename_folder(&conn, &notes_root, &work_id, "Projects").unwrap();
+        let renamed_id = rename_folder(&conn, &notes_root, &work_id, "Projects", &NoteCodec::Plain).unwrap();
         assert_eq!(renamed_id, "Projects");
         assert!(!notes_root.join("Work").exists());
         assert!(notes_root.join("Projects").is_dir());
@@ -1665,7 +1774,7 @@ mod tests {
             .unwrap();
         assert_eq!(folder_id_after_rename, "Projects");
 
-        move_note(&conn, &notes_root, &note_id, "").unwrap();
+        move_note(&conn, &notes_root, &note_id, "", &NoteCodec::Plain).unwrap();
         delete_folder(&conn, &notes_root, &renamed_id).unwrap();
         assert!(!notes_root.join("Projects").exists());
         let folder_count: i64 = conn
@@ -1684,7 +1793,7 @@ mod tests {
         let notes_root = temp_dir("root6");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
         let rel: String = conn
             .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| {
                 r.get(0)
@@ -1706,16 +1815,16 @@ mod tests {
         let notes_root = temp_dir("root7");
         let conn = db::init(&app_dir).unwrap();
 
-        let old_id = create_note(&conn, &notes_root, "", false).unwrap();
-        let recent_id = create_note(&conn, &notes_root, "", false).unwrap();
-        let kept_id = create_note(&conn, &notes_root, "", false).unwrap(); // never deleted
+        let old_id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        let recent_id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        let kept_id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap(); // never deleted
 
         let old_deleted_at = (Utc::now() - chrono::Duration::days(31)).to_rfc3339();
-        mutate_front_matter(&conn, &notes_root, &old_id, |fm| {
+        mutate_front_matter(&conn, &notes_root, &old_id, &NoteCodec::Plain, |fm| {
             fm.deleted_at = Some(old_deleted_at);
         })
         .unwrap();
-        set_deleted(&conn, &notes_root, &recent_id, true).unwrap(); // deleted "now"
+        set_deleted(&conn, &notes_root, &recent_id, true, &NoteCodec::Plain).unwrap(); // deleted "now"
 
         let purged = purge_expired_trash(&conn, &notes_root, TRASH_RETENTION_DAYS).unwrap();
         assert_eq!(purged, 1);
@@ -1753,12 +1862,12 @@ mod tests {
         let notes_root = temp_dir("related-root");
         let conn = db::init(&app_dir).unwrap();
 
-        let id_a = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id_a, "Note A\nbody a", None).unwrap();
-        let id_b = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id_b, "Note B\nbody b", None).unwrap();
-        let id_c = create_note(&conn, &notes_root, "", false).unwrap();
-        save_note_body(&conn, &notes_root, &id_c, "Note C\nbody c", None).unwrap();
+        let id_a = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id_a, "Note A\nbody a", None, &NoteCodec::Plain).unwrap();
+        let id_b = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id_b, "Note B\nbody b", None, &NoteCodec::Plain).unwrap();
+        let id_c = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id_c, "Note C\nbody c", None, &NoteCodec::Plain).unwrap();
 
         // Pre-seed embeddings whose content_hash already matches each
         // note's current body, so ensure_embeddings_current (called by
@@ -1839,7 +1948,7 @@ mod tests {
         let notes_root = temp_dir("attach-del-root");
         let conn = db::init(&app_dir).unwrap();
 
-        let id = create_note(&conn, &notes_root, "", false).unwrap();
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
         save_attachment(&notes_root, &id, "notes.txt", b"hi").unwrap();
         assert!(notes_root.join(ATTACHMENTS_DIR).join(&id).exists());
 
@@ -1853,10 +1962,10 @@ mod tests {
         let notes_root = temp_dir("daily-root");
         let conn = db::init(&app_dir).unwrap();
 
-        let first = get_or_create_daily_note(&conn, &notes_root, "2026-10-05").unwrap();
+        let first = get_or_create_daily_note(&conn, &notes_root, "2026-10-05", &NoteCodec::Plain).unwrap();
         assert!(notes_root.join("Daily Notes/2026-10-05.md").exists());
 
-        let second = get_or_create_daily_note(&conn, &notes_root, "2026-10-05").unwrap();
+        let second = get_or_create_daily_note(&conn, &notes_root, "2026-10-05", &NoteCodec::Plain).unwrap();
         assert_eq!(first, second);
 
         let count: i64 = conn
@@ -1865,7 +1974,7 @@ mod tests {
         assert_eq!(count, 1);
 
         // A different date gets its own, separate note.
-        let third = get_or_create_daily_note(&conn, &notes_root, "2026-10-06").unwrap();
+        let third = get_or_create_daily_note(&conn, &notes_root, "2026-10-06", &NoteCodec::Plain).unwrap();
         assert_ne!(first, third);
     }
 
@@ -1875,8 +1984,87 @@ mod tests {
         let notes_root = temp_dir("daily-bad-root");
         let conn = db::init(&app_dir).unwrap();
 
-        assert!(get_or_create_daily_note(&conn, &notes_root, "../../etc/passwd").is_err());
-        assert!(get_or_create_daily_note(&conn, &notes_root, "2026-10-5").is_err());
-        assert!(get_or_create_daily_note(&conn, &notes_root, "not-a-date").is_err());
+        assert!(get_or_create_daily_note(&conn, &notes_root, "../../etc/passwd", &NoteCodec::Plain).is_err());
+        assert!(get_or_create_daily_note(&conn, &notes_root, "2026-10-5", &NoteCodec::Plain).is_err());
+        assert!(get_or_create_daily_note(&conn, &notes_root, "not-a-date", &NoteCodec::Plain).is_err());
+    }
+
+    #[test]
+    fn encrypted_note_round_trips_and_is_unreadable_on_disk() {
+        let app_dir = temp_dir("enc-app");
+        let notes_root = temp_dir("enc-root");
+        let conn = db::init(&app_dir).unwrap();
+        let key = crate::vault_crypto::random_vault_key();
+        let codec = NoteCodec::Encrypted(key);
+
+        let id = create_note(&conn, &notes_root, "", false, &codec).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Secret Title\nsensitive body text", None, &codec).unwrap();
+
+        let rel: String = conn
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        // The filename is the opaque id, not the (secret) title, and uses
+        // the encrypted extension.
+        assert_eq!(rel, format!("{id}.menc"));
+
+        // The title/preview in the DB index must still be correct - that's
+        // what powers the note list while the vault is unlocked.
+        let (title, preview): (String, String) = conn
+            .query_row(
+                "SELECT title, plaintext_content FROM notes WHERE id = ?1",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "Secret Title");
+        assert_eq!(preview, "sensitive body text");
+
+        // The bytes actually on disk must not contain the plaintext title
+        // or body in any recognizable form.
+        let raw = fs::read(notes_root.join(&rel)).unwrap();
+        assert!(!raw.windows(6).any(|w| w == b"Secret"));
+        assert!(!raw.windows(9).any(|w| w == b"sensitive"));
+
+        // Reading it back through the codec recovers the exact body.
+        assert_eq!(
+            read_note_body(&notes_root, &rel, &codec).unwrap(),
+            "Secret Title\nsensitive body text"
+        );
+
+        // The wrong key must not be able to read it.
+        let wrong_codec = NoteCodec::Encrypted(crate::vault_crypto::random_vault_key());
+        assert!(read_note_body(&notes_root, &rel, &wrong_codec).is_err());
+    }
+
+    #[test]
+    fn migrate_to_encrypted_converts_existing_plaintext_notes_in_place() {
+        let app_dir = temp_dir("migrate-app");
+        let notes_root = temp_dir("migrate-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(&conn, &notes_root, &id, "Before\nmigration body", None, &NoteCodec::Plain).unwrap();
+        let old_rel: String = conn
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(old_rel, "Before.md");
+
+        let key = crate::vault_crypto::random_vault_key();
+        let migrated = migrate_to_encrypted(&conn, &notes_root, &key).unwrap();
+        assert_eq!(migrated, 1);
+
+        // The old plaintext file must be gone, replaced by an encrypted,
+        // id-named one.
+        assert!(!notes_root.join("Before.md").exists());
+        let new_rel: String = conn
+            .query_row("SELECT file_path FROM notes WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(new_rel, format!("{id}.menc"));
+
+        let codec = NoteCodec::Encrypted(key);
+        assert_eq!(
+            read_note_body(&notes_root, &new_rel, &codec).unwrap(),
+            "Before\nmigration body"
+        );
     }
 }

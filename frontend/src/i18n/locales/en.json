@@ -110,7 +110,11 @@
       "deleteColumn": "Delete Column",
       "deleteTable": "Delete Table",
       "insertMath": "Insert Math",
-      "insertMermaid": "Insert Diagram"
+      "insertMermaid": "Insert Diagram",
+      "link": "Link",
+      "linkUrlPlaceholder": "Paste or type a URL",
+      "linkApply": "Apply",
+      "linkRemove": "Remove"
     },
     "find": {
       "openFind": "Find in Note",

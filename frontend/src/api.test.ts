@@ -226,4 +226,11 @@ describe("api.ts Tauri command bindings", () => {
       destDir: "/home/user/Restored",
     });
   });
+
+  it("openExternalLink -> open_external_link", () => {
+    api.openExternalLink("https://example.com");
+    expect(invokeMock).toHaveBeenCalledWith("open_external_link", {
+      url: "https://example.com",
+    });
+  });
 });

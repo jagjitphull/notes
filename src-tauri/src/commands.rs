@@ -697,6 +697,46 @@ pub fn open_attachment(
         .map_err(|e| e.to_string())
 }
 
+// A note's hyperlink can hold any text a user (or a pasted/imported file)
+// typed as a URL, including a `javascript:`/`file:` scheme - rejecting
+// anything but http(s)/mailto here is what actually stops that from doing
+// something unexpected when clicked, not validation on the editor side.
+fn allowed_link_scheme(url: &str) -> bool {
+    let scheme = url.split(':').next().unwrap_or("").to_ascii_lowercase();
+    scheme == "http" || scheme == "https" || scheme == "mailto"
+}
+
+#[tauri::command]
+pub fn open_external_link(app: AppHandle, url: String) -> Result<(), String> {
+    if !allowed_link_scheme(&url) {
+        return Err("Refusing to open an unsupported link scheme".into());
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowed_link_scheme_accepts_http_https_and_mailto() {
+        assert!(allowed_link_scheme("http://example.com"));
+        assert!(allowed_link_scheme("https://example.com/path?q=1"));
+        assert!(allowed_link_scheme("mailto:a@example.com"));
+        assert!(allowed_link_scheme("HTTPS://Example.com"));
+    }
+
+    #[test]
+    fn allowed_link_scheme_rejects_everything_else() {
+        assert!(!allowed_link_scheme("javascript:alert(1)"));
+        assert!(!allowed_link_scheme("file:///etc/passwd"));
+        assert!(!allowed_link_scheme("data:text/html,hi"));
+        assert!(!allowed_link_scheme("not a url"));
+        assert!(!allowed_link_scheme(""));
+    }
+}
+
 #[tauri::command]
 pub fn create_folder(
     db_state: State<DbState>,

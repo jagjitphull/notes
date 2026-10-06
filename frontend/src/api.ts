@@ -161,6 +161,10 @@ export function openAttachment(path: string): Promise<void> {
   return invoke("open_attachment", { path });
 }
 
+export function openExternalLink(url: string): Promise<void> {
+  return invoke("open_external_link", { url });
+}
+
 export function createFolder(parentId: string, name: string): Promise<string> {
   return invoke("create_folder", { parentId, name });
 }

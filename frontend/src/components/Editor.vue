@@ -40,6 +40,7 @@ import {
   restoreNoteVersion,
   exportFile,
   relatedNotes as fetchRelatedNotes,
+  openExternalLink,
   type NoteVersionInfo,
 } from "../api";
 import { buildExportDocument } from "../export";
@@ -180,7 +181,16 @@ const editor = useEditor({
   content: "",
   editable: !isDeleted.value,
   extensions: [
-    StarterKit.configure({ heading: { levels: [1, 2, 3] }, codeBlock: false }),
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+      codeBlock: false,
+      // openOnClick: false - a plain click should place the cursor like
+      // any other text, matching the rest of the editor. Opening a link
+      // is a deliberate Cmd/Ctrl+click instead, handled in editorProps.
+      // handleClick below so it can go through the Tauri opener rather
+      // than navigating this app's own webview to an arbitrary URL.
+      link: { openOnClick: false, autolink: true, linkOnPaste: true },
+    }),
     CodeBlock.extend({
       addNodeView() {
         return VueNodeViewRenderer(CodeBlockView);
@@ -268,6 +278,18 @@ const editor = useEditor({
           insertAttachment(view, file, pos);
         }
       }
+      return true;
+    },
+    // Opening a link is a deliberate Cmd/Ctrl+click, not a plain click
+    // (which places the cursor like any other text, so the link text
+    // stays editable) - matches the convention most rich-text editors use.
+    handleClick(view, pos, event) {
+      if (!(event.metaKey || event.ctrlKey)) return false;
+      const href = view.state.doc.resolve(pos).marks().find((m) => m.type.name === "link")
+        ?.attrs.href as string | undefined;
+      if (!href) return false;
+      event.preventDefault();
+      openExternalLink(href).catch((e) => console.error("failed to open link", e));
       return true;
     },
   },
@@ -675,6 +697,62 @@ async function exportAsPdf() {
   document.body.appendChild(iframe);
 }
 
+const linkPopoverOpen = ref(false);
+const linkUrlInput = ref("");
+const linkButtonRef = ref<HTMLButtonElement | null>(null);
+const linkInputRef = ref<HTMLInputElement | null>(null);
+const linkPopoverPosition = ref({ top: 0, right: 0 });
+
+// Whether the current selection/cursor is already inside a link - the
+// popover pre-fills its URL (for editing) and offers "Remove Link" only
+// in that case, same as most rich-text editors' link tools.
+function currentLinkHref(): string | null {
+  const href = editor.value?.getAttributes("link").href;
+  return typeof href === "string" ? href : null;
+}
+
+async function toggleLinkPopover() {
+  if (linkPopoverOpen.value) {
+    linkPopoverOpen.value = false;
+    return;
+  }
+  linkUrlInput.value = currentLinkHref() ?? "";
+  linkPopoverOpen.value = true;
+  const rect = linkButtonRef.value?.getBoundingClientRect();
+  if (rect) linkPopoverPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+  await nextTick();
+  linkInputRef.value?.focus();
+  linkInputRef.value?.select();
+}
+
+function closeLinkPopover() {
+  linkPopoverOpen.value = false;
+  editor.value?.commands.focus();
+}
+
+function applyLink() {
+  const e = editor.value;
+  const url = linkUrlInput.value.trim();
+  if (!e || !url) return;
+  // A bare "example.com" is still a reasonable thing to type - this is
+  // what makes it a clickable, openable link rather than inert text
+  // (open_external_link on the Rust side only accepts http(s)/mailto, so
+  // this doesn't widen what a click can actually do).
+  const href = /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`;
+  const chain = e.chain().focus();
+  if (e.state.selection.empty) {
+    chain.insertContent({ type: "text", marks: [{ type: "link", attrs: { href } }], text: href }).run();
+  } else {
+    chain.extendMarkRange("link").setLink({ href }).run();
+  }
+  closeLinkPopover();
+}
+
+function removeLink() {
+  editor.value?.chain().focus().extendMarkRange("link").unsetLink().run();
+  closeLinkPopover();
+}
+
 watch(
   () => props.note?.id,
   () => {
@@ -682,6 +760,7 @@ watch(
     outlineOpen.value = false;
     historyOpen.value = false;
     exportMenuOpen.value = false;
+    linkPopoverOpen.value = false;
   },
 );
 
@@ -814,7 +893,48 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
           >
             <Icon :name="action.icon" />
           </button>
+          <button
+            ref="linkButtonRef"
+            class="format-button"
+            :class="{ active: editor?.isActive('link') || linkPopoverOpen }"
+            :title="t('editor.toolbar.link')"
+            :aria-label="t('editor.toolbar.link')"
+            :aria-pressed="linkPopoverOpen"
+            :disabled="isDeleted"
+            @click="toggleLinkPopover"
+          >
+            <Icon name="link" />
+          </button>
         </div>
+        <Teleport to="body">
+          <div v-if="linkPopoverOpen" class="outline-backdrop" @click="closeLinkPopover" />
+          <form
+            v-if="linkPopoverOpen"
+            class="link-popover"
+            :style="{ top: `${linkPopoverPosition.top}px`, right: `${linkPopoverPosition.right}px` }"
+            @submit.prevent="applyLink"
+          >
+            <input
+              ref="linkInputRef"
+              v-model="linkUrlInput"
+              type="text"
+              class="find-input"
+              :placeholder="t('editor.toolbar.linkUrlPlaceholder')"
+              @keydown.escape.prevent="closeLinkPopover"
+            />
+            <button
+              type="button"
+              v-if="currentLinkHref()"
+              class="find-text-button"
+              @click="removeLink"
+            >
+              {{ t('editor.toolbar.linkRemove') }}
+            </button>
+            <button type="submit" class="find-text-button" :disabled="!linkUrlInput.trim()">
+              {{ t('editor.toolbar.linkApply') }}
+            </button>
+          </form>
+        </Teleport>
         <div class="toolbar-right">
           <span class="editor-meta">
             {{ formattedDate }} &middot; {{ folderName }} &middot; {{ wordCountLabel }}
@@ -1207,6 +1327,24 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   padding: 4px;
+}
+
+.link-popover {
+  position: fixed;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 320px;
+  background: var(--bg-list);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+}
+
+.link-popover .find-input {
+  flex: 1 1 auto;
 }
 
 .outline-empty {

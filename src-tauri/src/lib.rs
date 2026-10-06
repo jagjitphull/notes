@@ -201,6 +201,7 @@ pub fn run() {
             commands::save_attachment,
             commands::get_attachment_size,
             commands::open_attachment,
+            commands::open_external_link,
             commands::create_folder,
             commands::rename_folder,
             commands::delete_folder,

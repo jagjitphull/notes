@@ -105,6 +105,11 @@ export const icons = {
   attachment: `
     <path d="M14.5 7.5 8.4 13.6a2.5 2.5 0 0 1-3.54-3.54l6.54-6.54a1.7 1.7 0 0 1 2.4 2.4l-6.37 6.37a.9.9 0 0 1-1.27-1.27l5.6-5.6" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
   `,
+  link: `
+    <path d="M7.5 14.2h-1.7a4.2 4.2 0 0 1 0-8.4h1.7" stroke-linecap="round" />
+    <path d="M12.5 5.8h1.7a4.2 4.2 0 1 1 0 8.4h-1.7" stroke-linecap="round" />
+    <path d="M6.7 10h6.6" stroke-linecap="round" />
+  `,
   sort: `
     <path d="M7 4v12M4.5 6.5 7 4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M13 16V4M10.5 13.5 13 16l2.5-2.5" stroke-linecap="round" stroke-linejoin="round" />

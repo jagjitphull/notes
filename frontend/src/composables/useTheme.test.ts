@@ -16,12 +16,18 @@ describe("useTheme", () => {
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   });
 
-  it("cyclePreference goes system -> light -> dark -> system", () => {
+  it("cyclePreference goes through every preset and back to system", () => {
     const { preference, cyclePreference } = useTheme();
     cyclePreference();
     expect(preference.value).toBe("light");
     cyclePreference();
     expect(preference.value).toBe("dark");
+    cyclePreference();
+    expect(preference.value).toBe("paper");
+    cyclePreference();
+    expect(preference.value).toBe("slate");
+    cyclePreference();
+    expect(preference.value).toBe("highContrast");
     cyclePreference();
     expect(preference.value).toBe("system");
   });

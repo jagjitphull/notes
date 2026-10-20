@@ -50,10 +50,14 @@
     "tags": "Tags",
     "appearanceTitle": "Appearance: {label} (click to change)",
     "appearanceLabel": "Appearance: {label}. Click to change.",
+    "appearanceMenuLabel": "Choose appearance",
     "theme": {
       "system": "System",
       "light": "Light",
-      "dark": "Dark"
+      "dark": "Dark",
+      "paper": "Paper",
+      "slate": "Slate",
+      "highContrast": "High Contrast"
     }
   },
   "noteList": {

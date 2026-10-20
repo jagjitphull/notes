@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Icon from "./icons/Icon.vue";
 import type { Folder, Tag } from "../types";
@@ -33,13 +33,73 @@ const searchQuery = defineModel<string>("searchQuery", { required: true });
 const smartSearchEnabled = defineModel<boolean>("smartSearchEnabled", { required: true });
 
 const { t } = useI18n();
-const { preference, cyclePreference } = useTheme();
+const { preference, setPreference, options: themeOptions } = useTheme();
 
 const themeLabels = computed<Record<ThemePreference, string>>(() => ({
   system: t("sidebar.theme.system"),
   light: t("sidebar.theme.light"),
   dark: t("sidebar.theme.dark"),
+  paper: t("sidebar.theme.paper"),
+  slate: t("sidebar.theme.slate"),
+  highContrast: t("sidebar.theme.highContrast"),
 }));
+
+// A small two-tone swatch previewing each preset's own colors, since
+// "Paper", "Slate", etc. aren't self-explanatory from their name alone -
+// deliberately hardcoded rather than read from the CSS variables, since
+// the point is to preview what the *other*, currently-inactive themes
+// look like.
+const themeSwatches: Record<ThemePreference, { bg: string; accent: string }> = {
+  system: { bg: "#f6f1e8", accent: "#0a84ff" },
+  light: { bg: "#fffcf7", accent: "#0a84ff" },
+  dark: { bg: "#28262a", accent: "#5aa9ff" },
+  paper: { bg: "#faf3e6", accent: "#0b5fae" },
+  slate: { bg: "#1f2733", accent: "#6aa8f5" },
+  highContrast: { bg: "#ffffff", accent: "#002d85" },
+};
+
+function iconForPreference(pref: ThemePreference): "sun" | "moon" | "monitor" {
+  if (pref === "dark" || pref === "slate") return "moon";
+  if (pref === "system") return "monitor";
+  return "sun";
+}
+
+const themeMenuOpen = ref(false);
+const themeButtonRef = ref<HTMLButtonElement | null>(null);
+// Teleported to <body> (see template) so it isn't clipped by .app-shell's
+// overflow: hidden, same pattern as Editor.vue's outline/history/export
+// dropdowns.
+const themeMenuPosition = ref({ bottom: 0, left: 0 });
+
+function toggleThemeMenu() {
+  themeMenuOpen.value = !themeMenuOpen.value;
+  if (themeMenuOpen.value) {
+    const rect = themeButtonRef.value?.getBoundingClientRect();
+    if (rect) {
+      themeMenuPosition.value = { bottom: window.innerHeight - rect.top + 6, left: rect.left };
+    }
+  }
+}
+
+function chooseTheme(pref: ThemePreference) {
+  setPreference(pref);
+  themeMenuOpen.value = false;
+}
+
+function onThemeMenuKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    themeMenuOpen.value = false;
+  }
+}
+
+watch(themeMenuOpen, (open) => {
+  if (open) {
+    window.addEventListener("keydown", onThemeMenuKeydown);
+  } else {
+    window.removeEventListener("keydown", onThemeMenuKeydown);
+  }
+});
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
@@ -213,14 +273,38 @@ defineExpose({ focusSearch });
       </button>
 
       <button
+        ref="themeButtonRef"
         class="theme-toggle"
-        @click="cyclePreference"
+        @click="toggleThemeMenu"
         :title="t('sidebar.appearanceTitle', { label: themeLabels[preference] })"
         :aria-label="t('sidebar.appearanceLabel', { label: themeLabels[preference] })"
       >
-        <Icon :name="preference === 'dark' ? 'moon' : preference === 'light' ? 'sun' : 'monitor'" />
+        <Icon :name="iconForPreference(preference)" />
         <span class="nav-label">{{ themeLabels[preference] }}</span>
       </button>
+      <Teleport to="body">
+        <div v-if="themeMenuOpen" class="outline-backdrop" @click="themeMenuOpen = false" />
+        <div
+          v-if="themeMenuOpen"
+          class="theme-dropdown"
+          role="menu"
+          :aria-label="t('sidebar.appearanceMenuLabel')"
+          :style="{ bottom: `${themeMenuPosition.bottom}px`, left: `${themeMenuPosition.left}px` }"
+        >
+          <button
+            v-for="option in themeOptions"
+            :key="option"
+            class="theme-item"
+            role="menuitemradio"
+            :aria-checked="option === preference"
+            @click="chooseTheme(option)"
+          >
+            <span class="theme-swatch" :style="{ background: themeSwatches[option].bg, borderColor: themeSwatches[option].accent }" />
+            <span class="theme-item-label">{{ themeLabels[option] }}</span>
+            <Icon v-if="option === preference" class="theme-item-check" name="check" />
+          </button>
+        </div>
+      </Teleport>
     </div>
   </nav>
 </template>
@@ -411,5 +495,60 @@ defineExpose({ focusSearch });
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
+}
+
+.outline-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.theme-dropdown {
+  position: fixed;
+  z-index: 1001;
+  min-width: 190px;
+  background: var(--bg-list);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 4px;
+}
+
+.theme-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.theme-item:hover {
+  background: var(--bg-hover);
+}
+
+.theme-swatch {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.theme-item-label {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.theme-item-check {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--accent-blue-text);
 }
 </style>

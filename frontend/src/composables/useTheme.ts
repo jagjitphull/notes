@@ -1,6 +1,21 @@
 import { onMounted, onUnmounted, ref } from "vue";
 
-export type ThemePreference = "system" | "light" | "dark";
+export type ThemePreference =
+  | "system"
+  | "light"
+  | "dark"
+  | "paper"
+  | "slate"
+  | "highContrast";
+
+const PREFERENCES: ThemePreference[] = [
+  "system",
+  "light",
+  "dark",
+  "paper",
+  "slate",
+  "highContrast",
+];
 
 const STORAGE_KEY = "notes-theme";
 const preference = ref<ThemePreference>(readStoredPreference());
@@ -10,8 +25,8 @@ const systemPrefersDark = ref(
 
 function readStoredPreference(): ThemePreference {
   const stored = localStorage.getItem(STORAGE_KEY);
-  return stored === "light" || stored === "dark" || stored === "system"
-    ? stored
+  return (PREFERENCES as string[]).includes(stored ?? "")
+    ? (stored as ThemePreference)
     : "system";
 }
 
@@ -43,10 +58,16 @@ export function useTheme() {
   }
 
   function cyclePreference() {
-    const order: ThemePreference[] = ["system", "light", "dark"];
-    const next = order[(order.indexOf(preference.value) + 1) % order.length];
+    const next =
+      PREFERENCES[(PREFERENCES.indexOf(preference.value) + 1) % PREFERENCES.length];
     setPreference(next);
   }
 
-  return { preference, systemPrefersDark, setPreference, cyclePreference };
+  return {
+    preference,
+    systemPrefersDark,
+    setPreference,
+    cyclePreference,
+    options: PREFERENCES,
+  };
 }

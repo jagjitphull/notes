@@ -41,11 +41,11 @@ export const icons = {
   `,
   sun: `
     <circle cx="10" cy="10" r="3.5" fill="currentColor" stroke="none" />
-    <path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.36 4.64l-1.42 1.42M6.06 13.94l-1.42 1.42M15.36 15.36l-1.42-1.42M6.06 6.06 4.64 4.64" stroke-width="1.3" stroke-linecap="round" />
+    <path d="M10 2v2M10 16v2M18 10h-2M4 10H2M15.36 4.64l-1.42 1.42M6.06 13.94l-1.42 1.42M15.36 15.36l-1.42-1.42M6.06 6.06 4.64 4.64" stroke-linecap="round" />
   `,
   monitor: `
-    <rect x="2.5" y="4.5" width="15" height="10" rx="1.5" stroke-width="1.4" />
-    <path d="M7 17.5h6" stroke-width="1.4" stroke-linecap="round" />
+    <rect x="2.5" y="4.5" width="15" height="10" rx="1.5" />
+    <path d="M7 17.5h6" stroke-linecap="round" />
   `,
   panelLeft: `
     <rect x="3" y="4" width="14" height="12" rx="2" />
@@ -64,34 +64,34 @@ export const icons = {
     <path d="M3.5 14.5h5.5" stroke-linecap="round" />
   `,
   download: `
-    <path d="M10 3v10M6 9.5 10 13.5 14 9.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M4 16.5h12" stroke-width="1.6" stroke-linecap="round" />
+    <path d="M10 3v10M6 9.5 10 13.5 14 9.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M4 16.5h12" stroke-linecap="round" />
   `,
   pin: `
     <path d="M11.5 2.5a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4 0l-.2-.2-2.6 2.6.6 2.9a.75.75 0 0 1-1.27.68l-2.9-2.9-4 4a.6.6 0 0 1-.85-.85l4-4-2.9-2.9a.75.75 0 0 1 .68-1.27l2.9.6 2.6-2.6-.2-.2a1 1 0 0 1 0-1.4l.7-.7Z" fill="currentColor" stroke="none" />
   `,
   document: `
-    <rect x="4.5" y="2.5" width="11" height="15" rx="1.5" stroke-width="1.3" />
-    <path d="M7 6.5h6M7 9.5h6M7 12.5h4" stroke-width="1.3" stroke-linecap="round" />
+    <rect x="4.5" y="2.5" width="11" height="15" rx="1.5" />
+    <path d="M7 6.5h6M7 9.5h6M7 12.5h4" stroke-linecap="round" />
   `,
   template: `
-    <path d="M6 3.5h5.5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke-width="1.3" stroke-linejoin="round" />
-    <path d="M11.5 3.5v2.5a1 1 0 0 0 1 1H15" stroke-width="1.3" stroke-linejoin="round" />
+    <path d="M6 3.5h5.5l3 3V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke-linejoin="round" />
+    <path d="M11.5 3.5v2.5a1 1 0 0 0 1 1H15" stroke-linejoin="round" />
   `,
   today: `
-    <rect x="3" y="4" width="14" height="13" rx="1.5" stroke-width="1.3" />
-    <path d="M3 7.5h14" stroke-width="1.3" />
-    <path d="M6.5 2.5v3M13.5 2.5v3" stroke-width="1.3" stroke-linecap="round" />
+    <rect x="3" y="4" width="14" height="13" rx="1.5" />
+    <path d="M3 7.5h14" />
+    <path d="M6.5 2.5v3M13.5 2.5v3" stroke-linecap="round" />
     <rect x="8.2" y="10" width="3.6" height="3.6" rx="0.6" fill="currentColor" stroke="none" />
   `,
   math: `
-    <path d="M3 11.5l2 3 3-10h9" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M3 11.5l2 3 3-10h9" stroke-linecap="round" stroke-linejoin="round" />
   `,
   diagram: `
-    <rect x="2.5" y="2.5" width="6" height="4.5" rx="1" stroke-width="1.3" />
-    <rect x="11.5" y="2.5" width="6" height="4.5" rx="1" stroke-width="1.3" />
-    <rect x="7" y="13" width="6" height="4.5" rx="1" stroke-width="1.3" />
-    <path d="M5.5 7v2a2 2 0 0 0 2 2h2.5M14.5 7v2a2 2 0 0 0-2 2h-2.5M10 11v2" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+    <rect x="2.5" y="2.5" width="6" height="4.5" rx="1" />
+    <rect x="11.5" y="2.5" width="6" height="4.5" rx="1" />
+    <rect x="7" y="13" width="6" height="4.5" rx="1" />
+    <path d="M5.5 7v2a2 2 0 0 0 2 2h2.5M14.5 7v2a2 2 0 0 0-2 2h-2.5M10 11v2" stroke-linecap="round" stroke-linejoin="round" />
   `,
   graph: `
     <path d="M5.5 6.5 10 4l4.5 2.5M5.5 13.5 10 16l4.5-2.5M5.5 6.5v7M14.5 6.5v7M10 4v12" stroke-width="1.1" opacity="0.6" stroke-linecap="round" />
@@ -103,7 +103,7 @@ export const icons = {
     <circle cx="10" cy="16" r="2" fill="currentColor" stroke="none" />
   `,
   attachment: `
-    <path d="M14.5 7.5 8.4 13.6a2.5 2.5 0 0 1-3.54-3.54l6.54-6.54a1.7 1.7 0 0 1 2.4 2.4l-6.37 6.37a.9.9 0 0 1-1.27-1.27l5.6-5.6" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M14.5 7.5 8.4 13.6a2.5 2.5 0 0 1-3.54-3.54l6.54-6.54a1.7 1.7 0 0 1 2.4 2.4l-6.37 6.37a.9.9 0 0 1-1.27-1.27l5.6-5.6" stroke-linecap="round" stroke-linejoin="round" />
   `,
   link: `
     <path d="M7.5 14.2h-1.7a4.2 4.2 0 0 1 0-8.4h1.7" stroke-linecap="round" />
@@ -111,10 +111,10 @@ export const icons = {
     <path d="M6.7 10h6.6" stroke-linecap="round" />
   `,
   lock: `
-    <rect x="4.5" y="9" width="11" height="8" rx="1.8" stroke-width="1.4" />
-    <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke-width="1.4" />
+    <rect x="4.5" y="9" width="11" height="8" rx="1.8" />
+    <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" />
     <circle cx="10" cy="12.7" r="1.1" fill="currentColor" stroke="none" />
-    <path d="M10 13.8v1.4" stroke-linecap="round" stroke-width="1.4" />
+    <path d="M10 13.8v1.4" stroke-linecap="round" />
   `,
   sort: `
     <path d="M7 4v12M4.5 6.5 7 4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -137,11 +137,11 @@ export const icons = {
     <path d="M5.5 13.5h9" stroke-linecap="round" />
   `,
   windowMaximize: `
-    <rect x="5.25" y="5.25" width="9.5" height="9.5" rx="1.25" stroke-width="1.4" />
+    <rect x="5.25" y="5.25" width="9.5" height="9.5" rx="1.25" />
   `,
   windowRestore: `
-    <path d="M7.75 6.75h6.5v6.5" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4" />
-    <rect x="4.75" y="7.75" width="7.5" height="7.5" rx="1.1" stroke-width="1.4" />
+    <path d="M7.75 6.75h6.5v6.5" stroke-linecap="round" stroke-linejoin="round" />
+    <rect x="4.75" y="7.75" width="7.5" height="7.5" rx="1.1" />
   `,
   // Editor toolbar - previously plain text glyphs ("B", "I", "H1", "•", ...)
   bold: `
@@ -207,24 +207,24 @@ export const icons = {
     <path d="M8 6.5h9M8 10h9M8 13.5h6" stroke-linecap="round" />
   `,
   table: `
-    <rect x="3" y="4" width="14" height="12" rx="1.3" stroke-width="1.3" />
+    <rect x="3" y="4" width="14" height="12" rx="1.3" />
     <path d="M3 8.3h14M3 12.7h14M8.3 4v12M12.7 4v12" stroke-width="1" />
   `,
   tableRowPlus: `
-    <path d="M3.5 5.5h13M3.5 10h13" stroke-linecap="round" stroke-width="1.4" />
-    <path d="M10 13v5M7.5 15.5h5" stroke-linecap="round" stroke-width="1.6" />
+    <path d="M3.5 5.5h13M3.5 10h13" stroke-linecap="round" />
+    <path d="M10 13v5M7.5 15.5h5" stroke-linecap="round" />
   `,
   tableRowMinus: `
-    <path d="M3.5 5.5h13M3.5 10h13" stroke-linecap="round" stroke-width="1.4" />
-    <path d="M7.5 15.5h5" stroke-linecap="round" stroke-width="1.6" />
+    <path d="M3.5 5.5h13M3.5 10h13" stroke-linecap="round" />
+    <path d="M7.5 15.5h5" stroke-linecap="round" />
   `,
   tableColumnPlus: `
-    <path d="M4 3.5v13M9 3.5v13" stroke-linecap="round" stroke-width="1.4" />
-    <path d="M14.5 7v6M11.5 10h6" stroke-linecap="round" stroke-width="1.6" />
+    <path d="M4 3.5v13M9 3.5v13" stroke-linecap="round" />
+    <path d="M14.5 7v6M11.5 10h6" stroke-linecap="round" />
   `,
   tableColumnMinus: `
-    <path d="M4 3.5v13M9 3.5v13" stroke-linecap="round" stroke-width="1.4" />
-    <path d="M11.5 10h6" stroke-linecap="round" stroke-width="1.6" />
+    <path d="M4 3.5v13M9 3.5v13" stroke-linecap="round" />
+    <path d="M11.5 10h6" stroke-linecap="round" />
   `,
   history: `
     <path d="M10 4a6.5 6.5 0 1 1-6.5 6.5" stroke-linecap="round" />
@@ -232,13 +232,13 @@ export const icons = {
     <path d="M10 7v3.5l2.5 1.5" stroke-linecap="round" stroke-linejoin="round" />
   `,
   upload: `
-    <path d="M10 13V3M6 7l4-4 4 4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M4 16.5h12" stroke-width="1.6" stroke-linecap="round" />
+    <path d="M10 13V3M6 7l4-4 4 4" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M4 16.5h12" stroke-linecap="round" />
   `,
   archive: `
-    <rect x="3" y="3.5" width="14" height="4" rx="1" stroke-width="1.3" />
-    <path d="M4 7.5v7.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7.5" stroke-width="1.3" />
-    <path d="M8.3 11h3.4" stroke-width="1.3" stroke-linecap="round" />
+    <rect x="3" y="3.5" width="14" height="4" rx="1" />
+    <path d="M4 7.5v7.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7.5" />
+    <path d="M8.3 11h3.4" stroke-linecap="round" />
   `,
 } as const;
 

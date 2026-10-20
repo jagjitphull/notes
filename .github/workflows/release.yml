@@ -23,6 +23,11 @@ jobs:
           # Apple Silicon and Intel Macs instead of two separate ones.
           - platform: macos-14
             args: --target universal-apple-darwin --bundles dmg
+          # NSIS (.exe) is the friendlier default for most people; MSI is
+          # included too since it's the format some managed/corporate
+          # environments specifically require.
+          - platform: windows-latest
+            args: --bundles nsis,msi
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -77,13 +82,19 @@ jobs:
           releaseName: "Notes ${{ github.ref_name }}"
           releaseBody: |
             See the commit history for what changed. Download the `.deb`
-            for Pop!_OS/Ubuntu 24.04+, the `.AppImage` for any distro, or
-            the `.dmg` for macOS (Apple Silicon and Intel).
+            for Pop!_OS/Ubuntu 24.04+, the `.AppImage` for any distro, the
+            `.dmg` for macOS (Apple Silicon and Intel), or the `.exe`
+            (NSIS) / `.msi` for Windows.
 
             The macOS build is unsigned (no Apple Developer account) -
             Gatekeeper will refuse to open it normally. Right-click the
             app in Finder, choose Open, then confirm in the dialog that
             appears; this is only needed the first time.
+
+            The Windows build is likewise unsigned (no code-signing
+            certificate) - SmartScreen will show a "Windows protected
+            your PC" warning on first run. Click "More info", then "Run
+            anyway"; this is only needed the first time.
           # Draft so a person reviews and publishes it, rather than every
           # tag push immediately going live as a public release.
           releaseDraft: true

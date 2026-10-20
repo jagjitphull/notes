@@ -1,8 +1,10 @@
 # Notes
 
-A minimalist, local-first note-taking app for Linux (Pop!_OS / Ubuntu), aiming
-for the speed and feel of Apple Notes — with notes that sync across machines
-by living as plain files in a folder you choose (Dropbox, pCloud, etc).
+A minimalist, local-first note-taking app for Linux, Windows, and macOS,
+aiming for the speed and feel of Apple Notes — with notes that sync across
+machines by living as plain files in a folder you choose (Dropbox, pCloud,
+etc). Developed primarily on Linux (Pop!_OS / Ubuntu); see "Packaging /
+installing" below for platform-specific notes.
 
 ## Stack
 
@@ -105,6 +107,14 @@ embedding model, so it can't be verified just by running the test suite.
 
 ## Packaging / installing
 
+The easiest path on any platform is to grab a pre-built installer from the
+[GitHub Releases page](https://github.com/jagjitphull/notes/releases) — see
+"Releasing" below for how those get built. To build locally instead, `tauri
+build` (via `npm run build`) always builds for the OS you run it on — there's
+no cross-compiling a Linux checkout into a `.dmg` or `.exe`.
+
+### Linux
+
 ```
 npm run build     # tauri build — produces a release .deb and .AppImage
 ```
@@ -131,6 +141,38 @@ there. The AppImage bundles its own webkit2gtk and works on either.
 RPM isn't built here since `rpmbuild` isn't part of this toolchain and
 isn't relevant on a Debian-based distro like Pop!_OS.
 
+### Windows
+
+```
+npm run build -- --bundles nsis,msi
+```
+
+Output lands in `src-tauri\target\release\bundle\`:
+
+- **`nsis\Notes_<version>_x64-setup.exe`** — the friendlier, recommended
+  installer for most people (per-user install, Start Menu shortcut,
+  uninstaller).
+- **`msi\Notes_<version>_x64_en-US.msi`** — for environments (corporate
+  imaging, Group Policy deployment) that specifically need an MSI.
+
+Both need the WebView2 runtime, which ships with Windows 10/11 by default;
+the installer downloads it automatically on the rare machine that's missing
+it. Neither has been built or run on real Windows hardware from here (this
+repo is developed on Linux) — the CI job (see "Releasing") is this build's
+actual first end-to-end test, same caveat as macOS below.
+
+### macOS
+
+```
+npm run build -- --bundles dmg
+```
+
+Output lands in `src-tauri/target/release/bundle/dmg/Notes_<version>_<arch>.dmg`
+(`aarch64` on Apple Silicon, `x64` on Intel — add `--target
+universal-apple-darwin` for a single universal binary covering both, which
+is what the CI release build does). Not built or run on real macOS hardware
+from here either — see "Releasing" for the same caveat.
+
 ### Flatpak, Snap, AUR
 
 Manifests for wider cross-distro distribution live alongside the app rather
@@ -156,8 +198,8 @@ is still needed before treating any of them as verified.
 
 ## Releasing (CI-built, signed, auto-updating)
 
-Pushing a version tag builds, signs, and publishes installers for both
-Linux and macOS, as a two-job matrix, via `.github/workflows/release.yml`:
+Pushing a version tag builds, signs, and publishes installers for Linux,
+Windows, and macOS, as a three-job matrix, via `.github/workflows/release.yml`:
 
 ```
 git tag v0.2.0
@@ -165,8 +207,9 @@ git push origin v0.2.0
 ```
 
 This creates a **draft** GitHub Release with the `.deb`, the `.AppImage`,
-a universal (Apple Silicon + Intel) macOS `.dmg`, and their signatures
-attached — review it and hit "Publish" when ready; nothing goes live
+a universal (Apple Silicon + Intel) macOS `.dmg`, a Windows `.exe` (NSIS)
+and `.msi`, and their signatures attached — review it and hit "Publish"
+when ready; nothing goes live
 automatically. Once published, the app's built-in updater (checks on
 launch, and a small "Update to vX.Y.Z" pill appears in the top bar when
 one's found) picks it up automatically for anyone already running an
@@ -179,10 +222,17 @@ identity-verified enrollment, not something that can be set up from
 here), so the `.dmg` isn't code-signed or notarized. Gatekeeper will
 refuse to open it with a normal double-click; the release notes tell
 people to right-click the app in Finder and choose Open instead, which
-only needs doing once. The build itself has not been tested on real
-macOS hardware (this repo is developed on Linux) - only that the CI
-job's config is valid; the first real tag push is effectively also its
-first end-to-end test.
+only needs doing once.
+
+**Windows is likewise unsigned** — no code-signing certificate (also a
+paid, identity-verified purchase), so the `.exe`/`.msi` trip SmartScreen's
+"Windows protected your PC" warning on first run; the release notes tell
+people to click "More info" then "Run anyway", also only needed once.
+
+Neither the Windows nor the macOS build has been tested on real hardware
+(this repo is developed on Linux) - only that each CI job's config is
+valid; the first real tag push is effectively also their first end-to-end
+test.
 
 Signing only happens here, in CI — a plain local `npm run build` produces
 an ordinary unsigned `.deb`/`.AppImage` (fine for testing the app itself)
@@ -225,9 +275,9 @@ doesn't know about.
   Phase 3 — folder clicks, note selection, and note editing are all backed
   by real data, not mocks.
 - **Phase 5** (search & polish): done — FTS5-backed search, keyboard
-  shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation), and Linux
-  packaging (.deb + AppImage, plus Flatpak/Snap/AUR manifests) are all in
-  place.
+  shortcuts (Ctrl+N, Ctrl+F, arrow-key list navigation), and cross-platform
+  packaging (Linux .deb + AppImage, plus Flatpak/Snap/AUR manifests;
+  Windows .exe/.msi; macOS .dmg) are all in place.
 - **Post-launch polish**: a system tray icon (closing the window hides it
   rather than quitting, so the app keeps syncing in the background; Quit
   from the tray menu exits for real) and a 30-day auto-purge of Recently
@@ -260,9 +310,9 @@ doesn't know about.
   both layout/theme composables, and the Smart Search toggle's
   availability/fallback behavior) — on every push and PR. Pushing a
   version tag builds, signs, and publishes a signed `.deb`/`.AppImage`
-  (Linux) and an unsigned universal `.dmg` (macOS), which the app's
-  built-in updater then picks up automatically for existing installs;
-  see "Releasing" above.
+  (Linux), an unsigned `.exe`/`.msi` (Windows), and an unsigned universal
+  `.dmg` (macOS), which the app's built-in updater then picks up
+  automatically for existing installs; see "Releasing" above.
 
 ## License
 

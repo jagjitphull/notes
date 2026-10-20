@@ -17,7 +17,15 @@
     "recentlyDeleted": "Recently Deleted",
     "templates": "Templates",
     "notes": "Notes",
-    "tag": "Tag"
+    "tag": "Tag",
+    "appName": "Notes"
+  },
+  "about": {
+    "navLabel": "About",
+    "version": "Version {version}",
+    "description": "A minimalist, local-first notes app for Linux, Windows, and macOS.",
+    "sourceLink": "View on GitHub",
+    "license": "MIT License"
   },
   "topBar": {
     "toggleSidebar": "Toggle Sidebar",

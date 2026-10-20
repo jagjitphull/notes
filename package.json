@@ -2,7 +2,7 @@
   "name": "notes",
   "version": "0.1.0",
   "private": true,
-  "description": "A minimalist, local-first note-taking app for Linux, built with Tauri + Vue.",
+  "description": "A minimalist, local-first note-taking app for Linux, Windows, and macOS, built with Tauri + Vue.",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",

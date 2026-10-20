@@ -47,7 +47,7 @@
     ],
     "category": "Productivity",
     "shortDescription": "A minimalist, local-first notes app",
-    "longDescription": "A minimalist, local-first note-taking app for Linux with the speed and feel of Apple Notes. Notes are stored as plain Markdown files in a folder you choose, so they can sync across machines via Dropbox, pCloud, or any synced folder, with instant full-text search backed by SQLite FTS5.",
+    "longDescription": "A minimalist, local-first note-taking app for Linux, Windows, and macOS with the speed and feel of Apple Notes. Notes are stored as plain Markdown files in a folder you choose, so they can sync across machines via Dropbox, pCloud, or any synced folder, with instant full-text search backed by SQLite FTS5.",
     "homepage": "https://github.com/jagjitphull/notes",
     "android": {
       "debugApplicationIdSuffix": ".debug"

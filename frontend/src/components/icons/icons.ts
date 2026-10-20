@@ -107,6 +107,11 @@ export const icons = {
     <circle cx="10" cy="12.7" r="1.1" fill="currentColor" stroke="none" />
     <path d="M10 13.8v1.4" stroke-linecap="round" />
   `,
+  info: `
+    <circle cx="10" cy="10" r="7.5" />
+    <circle cx="10" cy="6.3" r="1" fill="currentColor" stroke="none" />
+    <path d="M10 9.5v5" stroke-linecap="round" />
+  `,
   sort: `
     <path d="M7 4v12M4.5 6.5 7 4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M13 16V4M10.5 13.5 13 16l2.5-2.5" stroke-linecap="round" stroke-linejoin="round" />

@@ -10,6 +10,7 @@ import Editor from "./components/Editor.vue";
 import FirstRunSetup from "./components/FirstRunSetup.vue";
 import VaultUnlock from "./components/VaultUnlock.vue";
 import EnableEncryptionModal from "./components/EnableEncryptionModal.vue";
+import AboutModal from "./components/AboutModal.vue";
 import ContextMenu, { type ContextMenuItem } from "./components/ContextMenu.vue";
 import PromptModal from "./components/PromptModal.vue";
 import CommandPalette, { type PaletteAction } from "./components/CommandPalette.vue";
@@ -113,6 +114,7 @@ const notesRoot = ref<string | null>(null);
 const vaultEncrypted = ref(false);
 const vaultUnlocked = ref(true);
 const enableEncryptionModalOpen = ref(false);
+const aboutModalOpen = ref(false);
 
 const folders = ref<Folder[]>([]);
 const notes = ref<Note[]>([]);
@@ -1037,6 +1039,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @restore-backup="onRestoreBackup"
         @enable-encryption="onOpenEnableEncryption"
         @lock-vault="onLockVaultAction"
+        @about="aboutModalOpen = true"
         @folder-contextmenu="onFolderContextmenu"
         @tag-contextmenu="onTagContextmenu"
       />
@@ -1136,6 +1139,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       @close="enableEncryptionModalOpen = false"
       @enabled="onVaultEncryptionEnabled"
     />
+    <AboutModal v-if="aboutModalOpen" @close="aboutModalOpen = false" />
     <Teleport to="body">
       <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>
     </Teleport>

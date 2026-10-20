@@ -24,6 +24,7 @@ const emit = defineEmits<{
   restoreBackup: [];
   enableEncryption: [];
   lockVault: [];
+  about: [];
   folderContextmenu: [event: MouseEvent, folder: Folder];
   tagContextmenu: [event: MouseEvent, tag: Tag];
 }>();
@@ -295,6 +296,11 @@ defineExpose({ focusSearch });
           </button>
         </div>
       </Teleport>
+
+      <button class="nav-item" @click="emit('about')">
+        <Icon class="nav-icon" name="info" />
+        <span class="nav-label">{{ t('about.navLabel') }}</span>
+      </button>
     </div>
   </nav>
 </template>

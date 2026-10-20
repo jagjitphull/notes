@@ -18,6 +18,19 @@ const WIDTH = 900;
 const HEIGHT = 640;
 const PADDING = 50;
 const ITERATIONS = 250;
+// The repulsion pass is O(n^2) - for larger vaults, fewer steps run per
+// frame so each frame still stays well under budget instead of scaling
+// frame cost (and risking a dropped/janky frame, or worse on weaker
+// GPUs/drivers) linearly with vault size.
+const PAIR_BUDGET_PER_FRAME = 60000;
+// Past this many nodes, skip the CSS position transitions below: animating
+// hundreds of SVG elements' geometry every frame (on top of the physics
+// itself) is real compositor load, and on some GPU/driver combinations a
+// large graph settling was enough to freeze or crash the webview - the
+// physics is still chunked across frames either way, this only trades the
+// cosmetic "drift into place" for an instant settle on big graphs.
+const ANIMATION_NODE_CAP = 150;
+const MAX_SPEED = 40;
 
 const graphNotes = computed(() => props.notes.filter((n) => !n.deletedAt && !n.isTemplate));
 
@@ -82,7 +95,10 @@ interface SimNode {
 // simulation, but run incrementally (a handful of iterations per animation
 // frame, below) rather than all at once, so it never blocks the main
 // thread and the result settles into place visibly instead of teleporting.
-function stepOnce(sim: SimNode[], byId: Map<string, SimNode>, edgeList: GraphEdge[]) {
+// Returns the total speed across all nodes, so the caller can stop early
+// once the layout has visibly settled instead of always running the full
+// iteration budget.
+function stepOnce(sim: SimNode[], byId: Map<string, SimNode>, edgeList: GraphEdge[]): number {
   for (let i = 0; i < sim.length; i++) {
     for (let j = i + 1; j < sim.length; j++) {
       const a = sim[i];
@@ -118,17 +134,29 @@ function stepOnce(sim: SimNode[], byId: Map<string, SimNode>, edgeList: GraphEdg
     b.vy -= fy;
   }
 
+  let totalSpeed = 0;
   for (const n of sim) {
     n.vx += (WIDTH / 2 - n.x) * 0.002;
     n.vy += (HEIGHT / 2 - n.y) * 0.002;
     n.vx *= 0.82;
     n.vy *= 0.82;
+    // A safety clamp, not a tuning knob: without it, a pathological input
+    // (many notes initialized near-coincident) can make repulsion compound
+    // step over step into NaN/Infinity position values, which then render
+    // as invalid SVG attributes.
+    n.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, n.vx));
+    n.vy = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, n.vy));
     n.x += n.vx;
     n.y += n.vy;
+    totalSpeed += Math.abs(n.vx) + Math.abs(n.vy);
   }
+  return totalSpeed;
 }
 
 const nodes = ref<LayoutNode[]>([]);
+// Whether the current graph is small enough to drift into place with CSS
+// transitions - see ANIMATION_NODE_CAP above.
+const animated = ref(true);
 let animationFrame: number | null = null;
 
 function cancelLayout() {
@@ -141,6 +169,7 @@ function cancelLayout() {
 function startLayout() {
   cancelLayout();
   const list = graphNotes.value;
+  animated.value = list.length <= ANIMATION_NODE_CAP;
   if (list.length === 0) {
     nodes.value = [];
     return;
@@ -164,18 +193,27 @@ function startLayout() {
     }));
   }
 
-  // A few physics steps per frame keeps each frame well under 16ms (the
-  // graph pane and the rest of the UI both stay responsive while it
-  // settles), even for vault sizes well beyond what this app expects.
-  const STEPS_PER_FRAME = 4;
+  // Adaptive, not fixed: the repulsion pass is O(n^2), so a fixed
+  // steps-per-frame that's fine at 20 notes would blow the frame budget
+  // (and, on some GPU/driver combinations, the renderer itself) at 500 -
+  // scale steps down as the pair count goes up so every frame costs about
+  // the same regardless of vault size.
+  const pairs = (sim.length * (sim.length - 1)) / 2;
+  const stepsPerFrame = Math.max(1, Math.min(8, Math.floor(PAIR_BUDGET_PER_FRAME / Math.max(pairs, 1))));
   let iter = 0;
 
   function tick() {
-    for (let s = 0; s < STEPS_PER_FRAME && iter < ITERATIONS; s++, iter++) {
-      stepOnce(sim, byId, edgeList);
+    let speed = 0;
+    for (let s = 0; s < stepsPerFrame && iter < ITERATIONS; s++, iter++) {
+      speed = stepOnce(sim, byId, edgeList);
     }
     publish();
-    animationFrame = iter < ITERATIONS ? requestAnimationFrame(tick) : null;
+    // Stops as soon as the layout has visibly settled (most graphs get
+    // here well before ITERATIONS) rather than always spending the full
+    // iteration budget - the average speed-per-node threshold is well
+    // below anything still visibly moving at this scale.
+    const settled = speed / sim.length < 0.05;
+    animationFrame = iter < ITERATIONS && !settled ? requestAnimationFrame(tick) : null;
   }
 
   tick();
@@ -223,7 +261,13 @@ function radiusFor(id: string): number {
   <div class="graph-view">
     <h2 class="graph-title">{{ t('graph.title') }}</h2>
     <p v-if="graphNotes.length === 0" class="graph-empty">{{ t('graph.empty') }}</p>
-    <svg v-else class="graph-svg" :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" preserveAspectRatio="xMidYMid meet">
+    <svg
+      v-else
+      class="graph-svg"
+      :class="{ 'graph-svg--animated': animated }"
+      :viewBox="`0 0 ${WIDTH} ${HEIGHT}`"
+      preserveAspectRatio="xMidYMid meet"
+    >
       <line
         v-for="(edge, i) in edges"
         :key="i"
@@ -276,9 +320,15 @@ function radiusFor(id: string): number {
 .graph-edge {
   stroke: var(--border);
   stroke-width: 1.2;
-  /* The layout publishes a new position every animation frame while it
-     settles (see startLayout) - transitioning between them turns that
-     into a smooth drift instead of a jittery, frame-stepped jump. */
+}
+
+/* The layout publishes a new position every animation frame while it
+   settles (see startLayout) - transitioning between them turns that into
+   a smooth drift instead of a jittery, frame-stepped jump. Scoped to
+   graph-svg--animated (small/medium graphs only - see ANIMATION_NODE_CAP):
+   animating geometry on hundreds of SVG elements every frame is real
+   compositor load, so large graphs settle instantly instead. */
+.graph-svg--animated .graph-edge {
   transition: x1 0.1s linear, y1 0.1s linear, x2 0.1s linear, y2 0.1s linear;
 }
 
@@ -290,6 +340,9 @@ function radiusFor(id: string): number {
   fill: var(--accent-blue);
   stroke: var(--bg-editor);
   stroke-width: 2;
+}
+
+.graph-svg--animated .graph-node circle {
   transition: cx 0.1s linear, cy 0.1s linear, fill 0.15s ease;
 }
 
@@ -303,6 +356,9 @@ function radiusFor(id: string): number {
   text-anchor: middle;
   pointer-events: none;
   user-select: none;
+}
+
+.graph-svg--animated .graph-node text {
   transition: x 0.1s linear, y 0.1s linear;
 }
 

@@ -13,7 +13,6 @@ import EnableEncryptionModal from "./components/EnableEncryptionModal.vue";
 import ContextMenu, { type ContextMenuItem } from "./components/ContextMenu.vue";
 import PromptModal from "./components/PromptModal.vue";
 import CommandPalette, { type PaletteAction } from "./components/CommandPalette.vue";
-import GraphView from "./components/GraphView.vue";
 import {
   addNoteTag,
   createFolder,
@@ -1058,7 +1057,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       />
 
       <NoteList
-        v-if="listVisible && selectedId !== 'graph'"
+        v-if="listVisible"
         v-model:selected-id="selectedNoteId"
         style="grid-column: 3"
         :notes="filteredNotes"
@@ -1074,7 +1073,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @sort-click="onSortClick"
       />
       <div
-        v-if="listVisible && selectedId !== 'graph'"
+        v-if="listVisible"
         class="resize-handle"
         style="grid-column: 4"
         role="separator"
@@ -1089,15 +1088,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
         @keydown.right="stepResize('list', 10)"
       />
 
-      <GraphView
-        v-if="selectedId === 'graph'"
-        style="grid-column: 3 / -1"
-        :notes="notes"
-        @select-note="onPaletteSelectNote"
-      />
-
       <Editor
-        v-if="selectedId !== 'graph'"
         ref="editorRef"
         v-model:body="editingBody"
         style="grid-column: 5"

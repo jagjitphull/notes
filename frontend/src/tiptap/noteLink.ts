@@ -55,9 +55,8 @@ export interface NoteLinkOptions {
 // The backend already strips embedded images out of plaintextContent
 // before it ever reaches here (see note_file::extract_preview) - this cap
 // is just a second line of defense, so a single oversized note (a huge
-// paste, say) can't make this regex scan - run per note, synchronously,
-// every time the graph view opens - the thing that blocks the UI. A real
-// wikilink is expected well within normal note length.
+// paste, say) can't make this regex scan expensive. A real wikilink is
+// expected well within normal note length.
 const MAX_SCAN_LENGTH = 20_000;
 
 export function extractLinkedTitles(text: string): string[] {

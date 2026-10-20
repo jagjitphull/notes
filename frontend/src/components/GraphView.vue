@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { extractLinkedTitles } from "../tiptap/noteLink";
 import type { Note } from "../types";
@@ -70,57 +70,28 @@ interface LayoutNode {
   y: number;
 }
 
-// A one-shot Fruchterman-Reingold-style force layout, computed fresh
-// whenever the note/link set changes - not a live, draggable simulation.
-// Notes counts here are small (tens to low hundreds), so a few hundred
-// O(n^2) iterations up front is cheap and avoids the complexity of an
-// ongoing animation loop or drag-to-reposition interaction.
-const nodes = computed<LayoutNode[]>(() => {
-  const list = graphNotes.value;
-  if (list.length === 0) return [];
+interface SimNode {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
 
-  const sim = list.map((n, i) => {
-    const angle = (i / list.length) * Math.PI * 2;
-    const r = Math.min(WIDTH, HEIGHT) / 3;
-    return {
-      id: n.id,
-      x: WIDTH / 2 + Math.cos(angle) * r,
-      y: HEIGHT / 2 + Math.sin(angle) * r,
-      vx: 0,
-      vy: 0,
-    };
-  });
-  const byId = new Map(sim.map((n) => [n.id, n]));
-  const edgeList = edges.value;
-
-  for (let iter = 0; iter < ITERATIONS; iter++) {
-    for (let i = 0; i < sim.length; i++) {
-      for (let j = i + 1; j < sim.length; j++) {
-        const a = sim[i];
-        const b = sim[j];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const distSq = Math.max(dx * dx + dy * dy, 1);
-        const dist = Math.sqrt(distSq);
-        const force = 6000 / distSq;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        a.vx += fx;
-        a.vy += fy;
-        b.vx -= fx;
-        b.vy -= fy;
-      }
-    }
-
-    for (const e of edgeList) {
-      const a = byId.get(e.source);
-      const b = byId.get(e.target);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const idealLength = 130;
-      const force = (dist - idealLength) * 0.02;
+// A Fruchterman-Reingold-style force layout - not a live, draggable
+// simulation, but run incrementally (a handful of iterations per animation
+// frame, below) rather than all at once, so it never blocks the main
+// thread and the result settles into place visibly instead of teleporting.
+function stepOnce(sim: SimNode[], byId: Map<string, SimNode>, edgeList: GraphEdge[]) {
+  for (let i = 0; i < sim.length; i++) {
+    for (let j = i + 1; j < sim.length; j++) {
+      const a = sim[i];
+      const b = sim[j];
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const distSq = Math.max(dx * dx + dy * dy, 1);
+      const dist = Math.sqrt(distSq);
+      const force = 6000 / distSq;
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       a.vx += fx;
@@ -128,25 +99,117 @@ const nodes = computed<LayoutNode[]>(() => {
       b.vx -= fx;
       b.vy -= fy;
     }
-
-    for (const n of sim) {
-      n.vx += (WIDTH / 2 - n.x) * 0.002;
-      n.vy += (HEIGHT / 2 - n.y) * 0.002;
-      n.vx *= 0.82;
-      n.vy *= 0.82;
-      n.x += n.vx;
-      n.y += n.vy;
-    }
   }
 
+  for (const e of edgeList) {
+    const a = byId.get(e.source);
+    const b = byId.get(e.target);
+    if (!a || !b) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const idealLength = 130;
+    const force = (dist - idealLength) * 0.02;
+    const fx = (dx / dist) * force;
+    const fy = (dy / dist) * force;
+    a.vx += fx;
+    a.vy += fy;
+    b.vx -= fx;
+    b.vy -= fy;
+  }
+
+  for (const n of sim) {
+    n.vx += (WIDTH / 2 - n.x) * 0.002;
+    n.vy += (HEIGHT / 2 - n.y) * 0.002;
+    n.vx *= 0.82;
+    n.vy *= 0.82;
+    n.x += n.vx;
+    n.y += n.vy;
+  }
+}
+
+const nodes = ref<LayoutNode[]>([]);
+let animationFrame: number | null = null;
+
+function cancelLayout() {
+  if (animationFrame !== null) {
+    cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  }
+}
+
+function startLayout() {
+  cancelLayout();
+  const list = graphNotes.value;
+  if (list.length === 0) {
+    nodes.value = [];
+    return;
+  }
+
+  const sim: SimNode[] = list.map((n, i) => {
+    const angle = (i / list.length) * Math.PI * 2;
+    const r = Math.min(WIDTH, HEIGHT) / 3;
+    return { id: n.id, x: WIDTH / 2 + Math.cos(angle) * r, y: HEIGHT / 2 + Math.sin(angle) * r, vx: 0, vy: 0 };
+  });
+  const byId = new Map(sim.map((n) => [n.id, n]));
+  const edgeList = edges.value;
   const titleById = new Map(list.map((n) => [n.id, n.title]));
-  return sim.map((n) => ({
-    id: n.id,
-    title: titleById.get(n.id) || t("common.newNote"),
-    x: Math.min(Math.max(n.x, PADDING), WIDTH - PADDING),
-    y: Math.min(Math.max(n.y, PADDING), HEIGHT - PADDING),
-  }));
+
+  function publish() {
+    nodes.value = sim.map((n) => ({
+      id: n.id,
+      title: titleById.get(n.id) || t("common.newNote"),
+      x: Math.min(Math.max(n.x, PADDING), WIDTH - PADDING),
+      y: Math.min(Math.max(n.y, PADDING), HEIGHT - PADDING),
+    }));
+  }
+
+  // A few physics steps per frame keeps each frame well under 16ms (the
+  // graph pane and the rest of the UI both stay responsive while it
+  // settles), even for vault sizes well beyond what this app expects.
+  const STEPS_PER_FRAME = 4;
+  let iter = 0;
+
+  function tick() {
+    for (let s = 0; s < STEPS_PER_FRAME && iter < ITERATIONS; s++, iter++) {
+      stepOnce(sim, byId, edgeList);
+    }
+    publish();
+    animationFrame = iter < ITERATIONS ? requestAnimationFrame(tick) : null;
+  }
+
+  tick();
+}
+
+// Re-lays-out from scratch only when the actual node/edge set changes -
+// not on every unrelated note edit (pin, tags, word count, ...), which
+// would otherwise re-trigger the full physics simulation on every autosave
+// while the graph happens to be open.
+const topologyKey = computed(() => {
+  const ids = graphNotes.value
+    .map((n) => n.id)
+    .sort()
+    .join(",");
+  const edgeKey = edges.value
+    .map((e) => [e.source, e.target].sort().join("-"))
+    .sort()
+    .join(",");
+  return `${ids}::${edgeKey}`;
 });
+watch(topologyKey, startLayout, { immediate: true });
+
+// A rename that doesn't change the link graph (most renames) just needs
+// its label patched in place, not a full re-layout.
+watch(
+  () => graphNotes.value.map((n) => `${n.id}:${n.title}`).join(","),
+  () => {
+    if (animationFrame !== null) return; // a fresh layout is already in flight and will use current titles
+    const titleById = new Map(graphNotes.value.map((n) => [n.id, n.title]));
+    nodes.value = nodes.value.map((n) => ({ ...n, title: titleById.get(n.id) || t("common.newNote") }));
+  },
+);
+
+onBeforeUnmount(cancelLayout);
 
 const positionById = computed(() => new Map(nodes.value.map((n) => [n.id, n])));
 
@@ -213,6 +276,10 @@ function radiusFor(id: string): number {
 .graph-edge {
   stroke: var(--border);
   stroke-width: 1.2;
+  /* The layout publishes a new position every animation frame while it
+     settles (see startLayout) - transitioning between them turns that
+     into a smooth drift instead of a jittery, frame-stepped jump. */
+  transition: x1 0.1s linear, y1 0.1s linear, x2 0.1s linear, y2 0.1s linear;
 }
 
 .graph-node {
@@ -223,6 +290,7 @@ function radiusFor(id: string): number {
   fill: var(--accent-blue);
   stroke: var(--bg-editor);
   stroke-width: 2;
+  transition: cx 0.1s linear, cy 0.1s linear, fill 0.15s ease;
 }
 
 .graph-node:hover circle {
@@ -235,6 +303,7 @@ function radiusFor(id: string): number {
   text-anchor: middle;
   pointer-events: none;
   user-select: none;
+  transition: x 0.1s linear, y 0.1s linear;
 }
 
 .graph-node:hover text {

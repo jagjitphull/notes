@@ -60,7 +60,9 @@
       "dark": "Dark",
       "paper": "Paper",
       "slate": "Slate",
-      "highContrast": "High Contrast"
+      "highContrast": "High Contrast",
+      "harbor": "Harbor",
+      "glass": "Glass"
     }
   },
   "noteList": {

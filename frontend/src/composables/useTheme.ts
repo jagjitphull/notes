@@ -6,7 +6,9 @@ export type ThemePreference =
   | "dark"
   | "paper"
   | "slate"
-  | "highContrast";
+  | "highContrast"
+  | "harbor"
+  | "glass";
 
 const PREFERENCES: ThemePreference[] = [
   "system",
@@ -15,6 +17,8 @@ const PREFERENCES: ThemePreference[] = [
   "paper",
   "slate",
   "highContrast",
+  "harbor",
+  "glass",
 ];
 
 const STORAGE_KEY = "notes-theme";

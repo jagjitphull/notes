@@ -43,6 +43,8 @@ const themeLabels = computed<Record<ThemePreference, string>>(() => ({
   paper: t("sidebar.theme.paper"),
   slate: t("sidebar.theme.slate"),
   highContrast: t("sidebar.theme.highContrast"),
+  harbor: t("sidebar.theme.harbor"),
+  glass: t("sidebar.theme.glass"),
 }));
 
 // A small two-tone swatch previewing each preset's own colors, since
@@ -57,10 +59,12 @@ const themeSwatches: Record<ThemePreference, { bg: string; accent: string }> = {
   paper: { bg: "#faf3e6", accent: "#0b5fae" },
   slate: { bg: "#1f2733", accent: "#6aa8f5" },
   highContrast: { bg: "#ffffff", accent: "#002d85" },
+  harbor: { bg: "#101828", accent: "#2dd4bf" },
+  glass: { bg: "#ffffff", accent: "#0b7f74" },
 };
 
 function iconForPreference(pref: ThemePreference): "sun" | "moon" | "monitor" {
-  if (pref === "dark" || pref === "slate") return "moon";
+  if (pref === "dark" || pref === "slate" || pref === "harbor") return "moon";
   if (pref === "system") return "monitor";
   return "sun";
 }
@@ -326,10 +330,17 @@ defineExpose({ focusSearch });
   align-items: center;
   gap: 6px;
   background: var(--bg-hover);
+  border: 1px solid transparent;
   border-radius: 8px;
   padding: 6px 8px;
   margin: 0 4px 12px;
   color: var(--text-secondary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 .search-box svg {

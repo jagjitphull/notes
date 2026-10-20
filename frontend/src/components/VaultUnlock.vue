@@ -121,10 +121,12 @@ h1 {
   font-size: 13.5px;
   outline: none;
   text-align: center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .unlock-form input:focus {
   border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 button.primary {

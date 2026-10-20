@@ -29,6 +29,10 @@ describe("useTheme", () => {
     cyclePreference();
     expect(preference.value).toBe("highContrast");
     cyclePreference();
+    expect(preference.value).toBe("harbor");
+    cyclePreference();
+    expect(preference.value).toBe("glass");
+    cyclePreference();
     expect(preference.value).toBe("system");
   });
 

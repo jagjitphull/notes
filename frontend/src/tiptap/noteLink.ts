@@ -51,9 +51,19 @@ export interface NoteLinkOptions {
 // fetch. Matches the same literal syntax the markdown-it rule above
 // parses, so a title found here is exactly what that rule would turn
 // into a link on that note's own next parse.
+//
+// The backend already strips embedded images out of plaintextContent
+// before it ever reaches here (see note_file::extract_preview) - this cap
+// is just a second line of defense, so a single oversized note (a huge
+// paste, say) can't make this regex scan - run per note, synchronously,
+// every time the graph view opens - the thing that blocks the UI. A real
+// wikilink is expected well within normal note length.
+const MAX_SCAN_LENGTH = 20_000;
+
 export function extractLinkedTitles(text: string): string[] {
   const titles: string[] = [];
-  for (const match of text.matchAll(/\[\[([^[\]]+)\]\]/g)) {
+  const scoped = text.length > MAX_SCAN_LENGTH ? text.slice(0, MAX_SCAN_LENGTH) : text;
+  for (const match of scoped.matchAll(/\[\[([^[\]]+)\]\]/g)) {
     const title = match[1].trim();
     if (title) titles.push(title);
   }

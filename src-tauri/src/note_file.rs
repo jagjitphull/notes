@@ -131,23 +131,54 @@ fn strip_hard_break_marker(line: &str) -> &str {
     line.strip_suffix('\\').unwrap_or(line)
 }
 
+/// Replaces every `![alt](url)` image span with a short `[image]`
+/// placeholder. Pasted/dropped images are inlined as base64 data URIs
+/// directly in the note body (see Editor.vue) rather than saved to disk
+/// like other attachments, so a single screenshot can otherwise balloon
+/// this text to several MB — which then gets shipped over IPC for every
+/// note on every list refresh, regex-scanned for `[[wikilinks]]` by the
+/// graph view, and indexed (uselessly) by FTS5. This runs on the title and
+/// preview text only; the saved `.md` file itself is untouched.
+fn strip_embedded_images(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'!'
+            && bytes.get(i + 1) == Some(&b'[')
+            && let Some(close_bracket) = text[i + 2..].find(']')
+            && bytes.get(i + 2 + close_bracket + 1) == Some(&b'(')
+            && let Some(close_paren) = text[i + 2 + close_bracket + 2..].find(')')
+        {
+            out.push_str("[image]");
+            i = i + 2 + close_bracket + 2 + close_paren + 1;
+            continue;
+        }
+        // One char (not byte) at a time, to stay on UTF-8 boundaries.
+        let ch_len = text[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        out.push_str(&text[i..i + ch_len]);
+        i += ch_len;
+    }
+    out
+}
+
 /// The first non-empty line of the body (Markdown syntax stripped), used as
 /// both the note's display title and the basis for its filename.
 pub fn extract_title(body: &str) -> String {
     let raw = body.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-    strip_markdown_prefix(strip_hard_break_marker(raw))
+    strip_embedded_images(&strip_markdown_prefix(strip_hard_break_marker(raw)))
 }
 
-/// The remaining lines after the title, used for the list-view preview.
+/// The remaining lines after the title, used for the list-view preview,
+/// full-text search index, and the graph view's link extraction.
 pub fn extract_preview(body: &str) -> String {
     let mut lines = body.lines().skip_while(|l| l.trim().is_empty());
     lines.next(); // skip the title line itself
-    lines
+    let joined = lines
         .map(strip_hard_break_marker)
         .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
+        .join("\n");
+    strip_embedded_images(joined.trim())
 }
 
 pub fn sanitize_filename(title: &str) -> String {
@@ -200,6 +231,36 @@ mod tests {
         let body = "Grocery list\nMilk, eggs\nBread";
         assert_eq!(extract_title(body), "Grocery list");
         assert_eq!(extract_preview(body), "Milk, eggs\nBread");
+    }
+
+    #[test]
+    fn preview_replaces_inlined_images_with_a_placeholder() {
+        // Pasted images are inlined as base64 data URIs (see Editor.vue) -
+        // a huge one shouldn't leak into the preview/search/graph text.
+        let body = format!(
+            "Screenshot\nHere: ![a screenshot](data:image/png;base64,{})\nmore text",
+            "A".repeat(500_000)
+        );
+        let preview = extract_preview(&body);
+        assert_eq!(preview, "Here: [image]\nmore text");
+        assert!(preview.len() < 100);
+    }
+
+    #[test]
+    fn title_replaces_a_leading_image_with_a_placeholder() {
+        let body = "![pasted](data:image/png;base64,AAAA)\nmore text";
+        assert_eq!(extract_title(body), "[image]");
+    }
+
+    #[test]
+    fn preview_leaves_unterminated_image_syntax_alone() {
+        // Not well-formed image syntax (no closing bracket/paren) - copied
+        // through as plain text rather than silently dropped.
+        let body = "Title\n![alt text with no closing paren(oops";
+        assert_eq!(
+            extract_preview(body),
+            "![alt text with no closing paren(oops"
+        );
     }
 
     #[test]

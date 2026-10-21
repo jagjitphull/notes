@@ -45,3 +45,9 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # AES-GCM's 12-byte one) encrypts note content with it.
 argon2 = "0.6.0"
 chacha20poly1305 = "0.11.0"
+# A drawing's rendered PNG round-trips through the webview as base64 (an
+# <img src="data:..."> is the same approach already used for pasted
+# images - see Editor.vue) rather than served from disk via an asset
+# protocol, which would need its own scope and doesn't work for an
+# encrypted vault's ciphertext-on-disk anyway.
+base64 = "0.22.1"

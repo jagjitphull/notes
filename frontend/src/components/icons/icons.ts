@@ -225,6 +225,32 @@ export const icons = {
     <path d="M4 7.5v7.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7.5" />
     <path d="M8.3 11h3.4" stroke-linecap="round" />
   `,
+  // Drawing tool (DrawingCanvas.vue) - also doubles as the "insert
+  // drawing" editor-toolbar button and the re-edit affordance on an
+  // already-placed drawing.
+  pencil: `
+    <path d="M13.5 4.5l2 2L6 16H4v-2L13.5 4.5Z" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M12 6l2 2" stroke-linecap="round" />
+  `,
+  eraser: `
+    <path d="M9.5 4.6a1.5 1.5 0 0 1 2.1 0l3.8 3.8a1.5 1.5 0 0 1 0 2.1L10.5 15H7.5l-4-4a1.5 1.5 0 0 1 0-2.1l6-6.3Z" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M7 15.5h9" stroke-linecap="round" />
+  `,
+  shapeRectangle: `
+    <rect x="4" y="5.5" width="12" height="9" rx="1.5" />
+  `,
+  shapeCircle: `
+    <circle cx="10" cy="10" r="6" />
+  `,
+  shapeLine: `
+    <path d="M5 15 15 5" stroke-linecap="round" />
+  `,
+  textTool: `
+    <path d="M6 16 10 4l4 12M7.5 12h5" stroke-linecap="round" stroke-linejoin="round" />
+  `,
+  redo: `
+    <path d="M16 10a6 6 0 1 0-2 4.5M16 10V6M16 10h-4" stroke-linecap="round" stroke-linejoin="round" />
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

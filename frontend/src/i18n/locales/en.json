@@ -28,6 +28,25 @@
     "sourceLink": "View on GitHub",
     "license": "MIT License"
   },
+  "drawing": {
+    "title": "Drawing",
+    "edit": "Edit drawing",
+    "broken": "Drawing unavailable",
+    "confirmClear": "Clear the whole drawing? This can't be undone.",
+    "undo": "Undo",
+    "redo": "Redo",
+    "clear": "Clear",
+    "color": "Color: {color}",
+    "strokeWidth": "Stroke width: {width}",
+    "tool": {
+      "pen": "Pen",
+      "rectangle": "Rectangle",
+      "ellipse": "Ellipse",
+      "line": "Line",
+      "text": "Text",
+      "eraser": "Eraser"
+    }
+  },
   "topBar": {
     "toggleSidebar": "Toggle Sidebar",
     "toggleNoteList": "Toggle Note List",
@@ -117,6 +136,7 @@
       "deleteTable": "Delete Table",
       "insertMath": "Insert Math",
       "insertMermaid": "Insert Diagram",
+      "insertDrawing": "Insert Drawing",
       "link": "Link",
       "linkUrlPlaceholder": "Paste or type a URL",
       "linkApply": "Apply",

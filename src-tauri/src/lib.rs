@@ -218,6 +218,8 @@ pub fn run() {
             commands::move_note,
             commands::save_attachment,
             commands::get_attachment_size,
+            commands::read_attachment_text,
+            commands::read_attachment_base64,
             commands::open_attachment,
             commands::open_external_link,
             commands::create_folder,

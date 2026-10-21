@@ -741,6 +741,37 @@ pub fn get_attachment_size(
     store::attachment_size(&notes_root, &path)
 }
 
+/// Reads an attachment's content back as UTF-8 text - the drawing tool's
+/// own editable shape-list sidecar (see FileAttachmentView.vue), never
+/// anything meant for an external opener.
+#[tauri::command]
+pub fn read_attachment_text(
+    root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
+    path: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
+    let bytes = store::read_attachment(&notes_root, &path, &codec)?;
+    String::from_utf8(bytes).map_err(|e| e.to_string())
+}
+
+/// Reads an attachment's content back base64-encoded - a drawing's
+/// rendered PNG, displayed as an `<img src="data:...">` the same way a
+/// pasted image already is (see Editor.vue), rather than served from disk.
+#[tauri::command]
+pub fn read_attachment_base64(
+    root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
+    path: String,
+) -> Result<String, String> {
+    let notes_root = require_notes_root(&root_state)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
+    let bytes = store::read_attachment(&notes_root, &path, &codec)?;
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
 #[tauri::command]
 pub fn open_attachment(
     app: AppHandle,

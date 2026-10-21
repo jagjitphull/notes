@@ -157,6 +157,14 @@ export function getAttachmentSize(path: string): Promise<number> {
   return invoke("get_attachment_size", { path });
 }
 
+export function readAttachmentText(path: string): Promise<string> {
+  return invoke("read_attachment_text", { path });
+}
+
+export function readAttachmentBase64(path: string): Promise<string> {
+  return invoke("read_attachment_base64", { path });
+}
+
 export function openAttachment(path: string): Promise<void> {
   return invoke("open_attachment", { path });
 }

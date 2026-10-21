@@ -2595,6 +2595,7 @@ name = "notes"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
  "log",

@@ -1031,6 +1031,20 @@ pub fn attachment_size(notes_root: &Path, rel_path: &str) -> StoreResult<u64> {
         .map_err(|e| e.to_string())
 }
 
+/// Reads an attachment's own content (decrypted, for an encrypted vault -
+/// same codec as everything else under `.attachments/`). Used for data the
+/// app needs to display or re-edit itself (a drawing's rendered PNG, its
+/// editable shape-list sidecar) rather than hand off to an external opener,
+/// where [`open_attachment_path`]'s temp-file approach is the right one.
+pub fn read_attachment(
+    notes_root: &Path,
+    rel_path: &str,
+    codec: &NoteCodec,
+) -> StoreResult<Vec<u8>> {
+    let abs = resolve_attachment_path(notes_root, rel_path)?;
+    codec.read_bytes(&abs)
+}
+
 /// Where the user-facing "Open" command for `../path` should point an OS
 /// opener at: the attachment's own path, unchanged, for a plain vault - but
 /// for an encrypted one, the file on disk is ciphertext, which the app that

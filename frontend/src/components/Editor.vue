@@ -33,6 +33,9 @@ import type { EditorView } from "@tiptap/pm/view";
 import { extractLinkedTitles, NoteLink } from "../tiptap/noteLink";
 import { FileAttachment } from "../tiptap/fileAttachment";
 import { buildSlashCommandItems, SlashCommand, type SlashCommandItem } from "../tiptap/slashCommand";
+import type { Shape } from "../tiptap/drawingShapes";
+import { currentNoteId } from "../composables/useCurrentNoteId";
+import DrawingCanvas from "./DrawingCanvas.vue";
 import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import {
   saveAttachment,
@@ -161,6 +164,10 @@ async function refreshRelatedNotes() {
 }
 
 watch(() => [props.note?.id, props.smartSearchSupported], refreshRelatedNotes, { immediate: true });
+
+// Kept in sync for FileAttachmentView.vue's drawing re-edit flow - see
+// useCurrentNoteId.ts for why that can't just read props.note directly.
+watch(() => props.note?.id, (id) => (currentNoteId.value = id ?? null), { immediate: true });
 
 const body = defineModel<string>("body", { default: "" });
 
@@ -351,6 +358,35 @@ async function insertAttachment(view: EditorView, file: File, pos: number) {
   const node = view.state.schema.nodes.fileAttachment.create({ path: info.path });
   const tr = view.state.tr.insert(insertPos, node);
   view.dispatch(tr);
+}
+
+// Insert Drawing (toolbar) - see DrawingCanvas.vue and
+// FileAttachmentView.vue (which handles re-editing an already-placed
+// one). A drawing saves as a plain fileAttachment node, same `![[path]]`
+// embed as any other attachment; FileAttachmentView just renders a
+// "*.drawing.png" path as an inline image instead of the usual chip.
+const drawingCanvasOpen = ref(false);
+
+function openDrawingCanvas() {
+  drawingCanvasOpen.value = true;
+}
+
+async function onDrawingSave({ png, shapes }: { png: Uint8Array; shapes: Shape[] }) {
+  drawingCanvasOpen.value = false;
+  const noteId = props.note?.id;
+  const view = editor.value?.view;
+  if (!noteId || !view) return;
+  const uuid = crypto.randomUUID();
+  try {
+    const pngInfo = await saveAttachment(noteId, `${uuid}.drawing.png`, png);
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(shapes));
+    await saveAttachment(noteId, `${uuid}.drawing.json`, jsonBytes);
+    const pos = Math.min(view.state.selection.from, view.state.doc.content.size);
+    const node = view.state.schema.nodes.fileAttachment.create({ path: pngInfo.path });
+    view.dispatch(view.state.tr.insert(pos, node));
+  } catch (e) {
+    console.error("failed to save drawing", e);
+  }
 }
 
 // Safety net for pasted images: on at least one WebKitGTK build, a
@@ -855,6 +891,12 @@ const toolbarActions = computed<ToolbarAction[]>(() => {
           })
           .run(),
     },
+    {
+      label: t("editor.toolbar.insertDrawing"),
+      icon: "pencil",
+      isActive: () => false,
+      run: () => openDrawingCanvas(),
+    },
   ];
 });
 
@@ -1213,6 +1255,8 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
       <p>{{ t('editor.emptyState') }}</p>
     </div>
   </main>
+
+  <DrawingCanvas v-if="drawingCanvasOpen" @save="onDrawingSave" @cancel="drawingCanvasOpen = false" />
 </template>
 
 <style scoped>

@@ -2,16 +2,14 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { getVersion } from "@tauri-apps/api/app";
-import { openExternalLink } from "../api";
 import Icon from "./icons/Icon.vue";
 
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; "open-repo": [] }>();
 
 const { t } = useI18n();
 
 const version = ref("");
 const titleId = `about-modal-title-${Math.random().toString(36).slice(2)}`;
-const REPO_URL = "https://github.com/jagjitphull/notes";
 
 let previouslyFocused: HTMLElement | null = null;
 
@@ -27,10 +25,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   previouslyFocused?.focus();
 });
-
-function openRepo() {
-  openExternalLink(REPO_URL).catch((e) => console.error("failed to open link", e));
-}
 </script>
 
 <template>
@@ -41,7 +35,7 @@ function openRepo() {
         <h2 :id="titleId">{{ t('common.appName') }}</h2>
         <p v-if="version" class="about-version">{{ t('about.version', { version }) }}</p>
         <p class="about-description">{{ t('about.description') }}</p>
-        <button type="button" class="about-link" @click="openRepo">
+        <button type="button" class="about-link" @click="emit('open-repo')">
           <Icon name="link" />
           {{ t('about.sourceLink') }}
         </button>

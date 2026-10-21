@@ -51,7 +51,6 @@ import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
 import { useSortPreference } from "./composables/useSortPreference";
 import { useTheme } from "./composables/useTheme";
-import { useWindowControls } from "./composables/useWindowControls";
 import type { Folder, Note, Tag } from "./types";
 
 // A fixed accent palette (matching the system-color style Apple Notes/
@@ -99,12 +98,6 @@ const {
   checkForUpdate,
   installUpdate,
 } = useAppUpdater();
-const {
-  isMaximized,
-  minimize: minimizeWindow,
-  toggleMaximize: toggleMaximizeWindow,
-  close: closeWindow,
-} = useWindowControls();
 const { cyclePreference } = useTheme();
 
 const loading = ref(true);
@@ -600,6 +593,18 @@ const paletteActions = computed<PaletteAction[]>(() => [
 
 const GITHUB_URL = "https://github.com/jagjitphull/notes";
 
+// Shared by the Help menu's "View on GitHub" item and the About dialog's
+// own link - previously each opened the URL (and swallowed any failure
+// into a console.error nobody would see) separately. A failure here
+// almost always means the OS has no registered URL handler (no
+// xdg-open/gio/gnome-open equivalent on a minimal Linux install is the
+// most common real-world cause) - not something the app can recover
+// from, so the toast is the whole fix: tell the user instead of doing
+// nothing visible.
+function openGithub() {
+  openExternalLink(GITHUB_URL).catch((e) => showToast(t("common.linkOpenFailed", { error: String(e) })));
+}
+
 // The native menu bar (File/Edit/View/Window/Help - see app_menu.rs) emits
 // a "menu" event carrying a custom item's id. Most ids are already
 // commands in paletteActions above (the command palette's own registry),
@@ -622,7 +627,7 @@ function onMenuAction(id: string) {
       aboutModalOpen.value = true;
       return;
     case "github":
-      openExternalLink(GITHUB_URL).catch((e) => console.error("failed to open link", e));
+      openGithub();
       return;
     default:
       paletteActions.value.find((a) => a.id === id)?.run();
@@ -985,7 +990,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   <VaultUnlock v-else-if="!loading && !vaultUnlocked" @unlocked="onVaultUnlocked" />
 
   <div v-else-if="!loading" class="app-root">
-    <div class="top-bar" data-tauri-drag-region="deep">
+    <div class="top-bar">
       <div class="top-bar-start">
         <button
           class="pane-toggle"
@@ -1030,33 +1035,6 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
           <Icon name="download" />
           <span>{{ updateInstalling ? t('topBar.installing') : t('topBar.updateTo', { version: updateVersion }) }}</span>
         </button>
-
-        <div class="window-controls">
-          <button
-            class="window-control-button"
-            :title="t('topBar.minimize')"
-            :aria-label="t('topBar.minimize')"
-            @click="minimizeWindow"
-          >
-            <Icon name="windowMinimize" />
-          </button>
-          <button
-            class="window-control-button"
-            :title="isMaximized ? t('topBar.restore') : t('topBar.maximize')"
-            :aria-label="isMaximized ? t('topBar.restore') : t('topBar.maximize')"
-            @click="toggleMaximizeWindow"
-          >
-            <Icon :name="isMaximized ? 'windowRestore' : 'windowMaximize'" />
-          </button>
-          <button
-            class="window-control-button window-control-close"
-            :title="t('topBar.close')"
-            :aria-label="t('topBar.close')"
-            @click="closeWindow"
-          >
-            <Icon name="close" />
-          </button>
-        </div>
       </div>
     </div>
 
@@ -1183,7 +1161,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       @close="enableEncryptionModalOpen = false"
       @enabled="onVaultEncryptionEnabled"
     />
-    <AboutModal v-if="aboutModalOpen" @close="aboutModalOpen = false" />
+    <AboutModal v-if="aboutModalOpen" @close="aboutModalOpen = false" @open-repo="openGithub" />
     <Teleport to="body">
       <div v-if="toastMessage" class="toast" role="status">{{ toastMessage }}</div>
     </Teleport>
@@ -1208,8 +1186,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   padding: 5px 5px 5px 8px;
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
-  /* A native-feeling drag handle needs some height to grab - the row's
-     content alone (26px buttons) reads as too thin a target. */
+  /* Keeps the row from looking cramped around its 26px buttons. */
   min-height: 38px;
   box-sizing: border-box;
 }
@@ -1283,7 +1260,10 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   font-size: 13px;
   text-align: center;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-  z-index: 1000;
+  /* Above every modal (all at 1100) - a toast fired while one is open (the
+     GitHub-link-open failure from an open About dialog, among others)
+     must still be visible, not silently hidden behind the backdrop. */
+  z-index: 1200;
 }
 
 .pane-toggle.active {
@@ -1293,48 +1273,6 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
 .pane-toggle svg {
   width: 16px;
   height: 16px;
-}
-
-.window-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 6px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border);
-}
-
-.window-control-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease;
-}
-
-.window-control-button svg {
-  width: 13px;
-  height: 13px;
-}
-
-.window-control-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.window-control-button:active {
-  filter: brightness(0.92);
-}
-
-.window-control-close:hover {
-  background: #e81123;
-  color: #fff;
 }
 
 .app-shell {

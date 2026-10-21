@@ -18,7 +18,8 @@
     "templates": "Templates",
     "notes": "Notes",
     "tag": "Tag",
-    "appName": "Notes"
+    "appName": "Notes",
+    "linkOpenFailed": "Couldn't open the link: {error}"
   },
   "about": {
     "navLabel": "About",
@@ -33,11 +34,7 @@
     "toggleFocusMode": "Toggle Focus Mode",
     "installUpdate": "Install v{version} and restart",
     "installing": "Installing…",
-    "updateTo": "Update to v{version}",
-    "minimize": "Minimize",
-    "maximize": "Maximize",
-    "restore": "Restore",
-    "close": "Close Window"
+    "updateTo": "Update to v{version}"
   },
   "resize": {
     "sidebar": "Resize sidebar",

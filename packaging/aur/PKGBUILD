@@ -29,7 +29,14 @@ build() {
   npm install --prefix frontend
   npm run build --prefix frontend
   cd src-tauri
-  cargo build --release --locked
+  # The `tauri` crate's `custom-protocol` feature is what makes the app
+  # load the bundled frontend (frontendDist) instead of the Vite dev
+  # server (devUrl) - `cargo tauri build` enables it automatically, but a
+  # plain `cargo build` like this one doesn't, since this crate's own
+  # Cargo.toml never turns it on itself. Without this flag the resulting
+  # binary launches to a blank "could not connect to localhost" window on
+  # every machine that doesn't happen to have a Vite dev server running.
+  cargo build --release --locked --features tauri/custom-protocol
 }
 
 package() {

@@ -71,3 +71,53 @@ jobs:
       # tests below wouldn't (template type errors, unresolved imports).
       - run: npm run build
       - run: npm test
+
+  e2e:
+    name: E2E smoke test (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev pkg-config build-essential \
+            xvfb xdotool imagemagick
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci --prefix frontend
+      - run: npm run build --prefix frontend
+
+      # custom-protocol makes the binary load the bundled frontend instead
+      # of the Vite dev server - `cargo tauri build` enables this
+      # automatically, but a bare `cargo build` doesn't (see
+      # packaging/aur/PKGBUILD and README's "Flatpak, Snap, AUR" section
+      # for how this bit a hand-rolled build before).
+      - name: Build release binary
+        working-directory: src-tauri
+        run: cargo build --release --locked --features tauri/custom-protocol
+
+      - name: Run E2E smoke test
+        run: ./e2e/smoke-test.sh
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: e2e/screenshots/
+          retention-days: 7

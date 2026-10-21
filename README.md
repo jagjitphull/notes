@@ -67,6 +67,20 @@ npm run dev     # launches the Tauri app with the Vite dev server
 On first launch you'll be asked where to store your notes (with quick-picks
 for detected Dropbox/pCloud/Nextcloud/etc folders, or a local-only default).
 
+## Testing
+
+- `cargo test --all` (in `src-tauri/`) — backend unit tests.
+- `npm test` (in `frontend/`) — frontend unit tests (Vitest).
+- `./e2e/smoke-test.sh` — a real end-to-end smoke test: builds nothing
+  itself (point `NOTES_BINARY` at a release build, or just run
+  `cargo build --release --features tauri/custom-protocol` first), launches
+  the actual app under Xvfb, and drives it with `xdotool` - real X11 input
+  events - to create a note, confirm it actually landed on disk with the
+  right content, and exercise search. See `e2e/README.md` for why this
+  uses `xdotool` instead of the more usual WebDriver (`tauri-driver`)
+  approach. Runs in CI on every push/PR (`.github/workflows/ci.yml`'s `e2e`
+  job), with screenshots uploaded as a build artifact on failure.
+
 ## Testing Smart Search
 
 Smart Search (semantic search, see Status below) needs a real
@@ -210,12 +224,25 @@ policy, not missing tooling:
 What *was* verified here: a real `cargo tauri build --no-bundle` release
 build (this also caught `flatpak/README.md` documenting a now-removed
 `--bundles none` flag — fixed to `--no-bundle`), the AUR `PKGBUILD`'s
-`package()` step run by hand against that real build (every installed path
-matches, including icons/desktop file/license), `cargo build --release
---locked` (what the PKGBUILD's `build()` actually runs) succeeding cleanly,
-and the shared `packaging/linux/dev.jagjitphull.notes.desktop`/`.metainfo.xml`
-both passing `desktop-file-validate`/`appstreamcli validate`. What's still
-needed before treating any of the three as verified: an actual
+`package()` step run by hand against that build (every installed path
+matches, including icons/desktop file/license), and the shared
+`packaging/linux/dev.jagjitphull.notes.desktop`/`.metainfo.xml` both passing
+`desktop-file-validate`/`appstreamcli validate`.
+
+This also caught a real bug in the AUR `PKGBUILD`'s `build()` step: it ran
+a plain `cargo build --release --locked`, which compiles cleanly but
+produces a binary that can never show its UI. Tauri only loads the bundled
+frontend instead of the Vite dev server when the `tauri` crate's
+`custom-protocol` feature is enabled; `cargo tauri build` (what the
+Flatpak/Snap docs correctly call, and what CI's `tauri-action` calls)
+enables it automatically, but a bare `cargo build` doesn't, since nothing
+in `src-tauri/Cargo.toml` turns it on either. The result - confirmed by
+actually launching the built binary - was a window permanently stuck on
+WebKit's "could not connect to localhost" page. Fixed by adding
+`--features tauri/custom-protocol` to that one `cargo build` call; relaunched
+the rebuilt binary afterward to confirm it now reaches the real UI.
+
+What's still needed before treating any of the three as verified: an actual
 `flatpak-builder`/`snapcraft`/`makepkg` run on a machine (or CI runner) with
 real access to Flathub/the Snap Store/Arch's infrastructure, and for AUR,
 an upload + install by someone with an Arch machine.

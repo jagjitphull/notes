@@ -1,6 +1,9 @@
 node_modules
 *.local
 
+# E2E smoke test output (see e2e/smoke-test.sh)
+e2e/screenshots/
+
 # Local SQLite databases (if ever run outside the OS app-data dir)
 *.sqlite3
 *.sqlite3-wal

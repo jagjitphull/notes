@@ -128,13 +128,13 @@ pub fn full_rescan(conn: &Connection, notes_root: &Path, codec: &NoteCodec) -> S
     Ok(())
 }
 
-/// Encrypts every existing plaintext note in place - the one-time step
-/// `enable_vault_encryption` takes right after creating the vault's keyring.
-/// `full_rescan`s first (Plain) so every file has front matter and an id to
-/// migrate by, then again (Encrypted) at the end to pick up the new .menc
-/// paths. Collects the list of .md files before touching any of them,
-/// rather than mutating while `WalkDir` is still iterating the directory
-/// it's rewriting.
+/// Encrypts every existing plaintext note, attachment, and version
+/// snapshot in place - the one-time step `enable_vault_encryption` takes
+/// right after creating the vault's keyring. `full_rescan`s first (Plain)
+/// so every note has front matter and an id to migrate by, then again
+/// (Encrypted) at the end to pick up the new .menc paths. Collects the
+/// list of .md files before touching any of them, rather than mutating
+/// while `WalkDir` is still iterating the directory it's rewriting.
 pub fn migrate_to_encrypted(conn: &Connection, notes_root: &Path, vault_key: &[u8; 32]) -> StoreResult<usize> {
     full_rescan(conn, notes_root, &NoteCodec::Plain)?;
 
@@ -160,7 +160,39 @@ pub fn migrate_to_encrypted(conn: &Connection, notes_root: &Path, vault_key: &[u
         migrated += 1;
     }
 
+    migrated += migrate_attachments_and_versions_to_encrypted(notes_root, &codec)?;
+
     full_rescan(conn, notes_root, &codec)?;
+    Ok(migrated)
+}
+
+/// Re-encrypts every attachment and version-snapshot file already on disk,
+/// in place (same path and filename - only the bytes change). These live
+/// under `.attachments`/`.versions`, which [`migrate_to_encrypted`]'s main
+/// walk above deliberately skips (dot-prefixed directories are never part
+/// of the note walk), so they need their own pass here.
+fn migrate_attachments_and_versions_to_encrypted(
+    notes_root: &Path,
+    codec: &NoteCodec,
+) -> StoreResult<usize> {
+    let mut migrated = 0usize;
+    for dir_name in [ATTACHMENTS_DIR, versions::VERSIONS_DIR] {
+        let dir = notes_root.join(dir_name);
+        if !dir.exists() {
+            continue;
+        }
+        let paths: Vec<PathBuf> = WalkDir::new(&dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .map(|e| e.path().to_path_buf())
+            .collect();
+        for path in paths {
+            let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+            codec.write_bytes(&path, &bytes)?;
+            migrated += 1;
+        }
+    }
     Ok(migrated)
 }
 
@@ -735,7 +767,7 @@ pub fn save_note_body(
         });
     }
 
-    versions::maybe_snapshot(notes_root, note_id, &old_body, false)?;
+    versions::maybe_snapshot(notes_root, note_id, &old_body, false, codec)?;
     write_body(conn, notes_root, note_id, body, codec)?;
     Ok(SaveOutcome::Saved {
         hash: content_hash(body),
@@ -753,8 +785,8 @@ pub fn restore_version(
     codec: &NoteCodec,
 ) -> StoreResult<()> {
     let (_, _, current_body) = read_current(conn, notes_root, note_id, codec)?;
-    versions::maybe_snapshot(notes_root, note_id, &current_body, true)?;
-    let restored_body = versions::get(notes_root, note_id, timestamp)?;
+    versions::maybe_snapshot(notes_root, note_id, &current_body, true, codec)?;
+    let restored_body = versions::get(notes_root, note_id, timestamp, codec)?;
     write_body(conn, notes_root, note_id, &restored_body, codec)
 }
 
@@ -944,16 +976,23 @@ fn unique_attachment_path(dir: &Path, filename: &str) -> PathBuf {
     candidate
 }
 
-/// Saves a dropped/pasted file's bytes under notes_root/.attachments/<note
-/// id>/, returning the path (relative to notes_root, forward-slashed) to
-/// embed as `![[path]]` in the note's markdown. Only the filename's own
-/// basename is trusted - a dragged-in file could be named with path
-/// separators.
+/// Saves a dropped/pasted file's bytes (encrypted first, for an encrypted
+/// vault - same codec, same key as note content) under
+/// notes_root/.attachments/<note id>/, returning the path (relative to
+/// notes_root, forward-slashed) to embed as `![[path]]` in the note's
+/// markdown. Only the filename's own basename is trusted - a dragged-in
+/// file could be named with path separators. The filename itself is kept
+/// as-is even when encrypted (unlike a note's own filename, which becomes
+/// its opaque id) - it's only ever embedded inside the note's own
+/// (encrypted) body text, never exposed through the DB or an API response
+/// on its own, so there's nothing in the directory listing to protect that
+/// isn't already just "a file of about this size exists".
 pub fn save_attachment(
     notes_root: &Path,
     note_id: &str,
     filename: &str,
     bytes: &[u8],
+    codec: &NoteCodec,
 ) -> StoreResult<AttachmentInfo> {
     let safe_name = Path::new(filename)
         .file_name()
@@ -963,7 +1002,7 @@ pub fn save_attachment(
     let dir = notes_root.join(ATTACHMENTS_DIR).join(note_id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = unique_attachment_path(&dir, safe_name);
-    fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    codec.write_bytes(&path, bytes)?;
 
     let rel_path = path
         .strip_prefix(notes_root)
@@ -980,6 +1019,11 @@ pub fn save_attachment(
     })
 }
 
+/// The on-disk size, which for an encrypted attachment is the ciphertext's
+/// size - a constant ~40 bytes (a nonce plus an auth tag) more than the
+/// real content, never enough to move a displayed "2.3 MB" - rather than
+/// decrypting the whole file (possibly large) just to report its exact
+/// size.
 pub fn attachment_size(notes_root: &Path, rel_path: &str) -> StoreResult<u64> {
     let abs = resolve_attachment_path(notes_root, rel_path)?;
     fs::metadata(&abs)
@@ -987,8 +1031,53 @@ pub fn attachment_size(notes_root: &Path, rel_path: &str) -> StoreResult<u64> {
         .map_err(|e| e.to_string())
 }
 
-pub fn attachment_absolute_path(notes_root: &Path, rel_path: &str) -> StoreResult<PathBuf> {
-    resolve_attachment_path(notes_root, rel_path)
+/// Where the user-facing "Open" command for `../path` should point an OS
+/// opener at: the attachment's own path, unchanged, for a plain vault - but
+/// for an encrypted one, the file on disk is ciphertext, which the app that
+/// owns this file type (a PDF reader, an image viewer, ...) can't make
+/// sense of, so this decrypts it to a fresh file under
+/// [`decrypted_attachment_temp_dir`] first and returns *that* path instead.
+/// Those temp copies are cleared out at the next app launch (see
+/// [`cleanup_decrypted_attachment_temp_dir`]), not right after use - there's
+/// no reliable signal here for "the external app is done with it".
+pub fn open_attachment_path(
+    notes_root: &Path,
+    rel_path: &str,
+    codec: &NoteCodec,
+) -> StoreResult<PathBuf> {
+    let abs = resolve_attachment_path(notes_root, rel_path)?;
+    if !codec.is_encrypted() {
+        return Ok(abs);
+    }
+    let bytes = codec.read_bytes(&abs)?;
+    let temp_dir = decrypted_attachment_temp_dir();
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+    let ext = abs.extension().and_then(|e| e.to_str());
+    let temp_name = match ext {
+        Some(ext) => format!("{}.{ext}", Uuid::new_v4()),
+        None => Uuid::new_v4().to_string(),
+    };
+    let temp_path = temp_dir.join(temp_name);
+    fs::write(&temp_path, &bytes).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(temp_path)
+}
+
+fn decrypted_attachment_temp_dir() -> PathBuf {
+    std::env::temp_dir().join("notes-decrypted-attachments")
+}
+
+/// Called once at app startup (before anything could have written a fresh
+/// one this session) to clear out whatever [`open_attachment_path`] left
+/// behind last time the app ran - the OS's own temp-directory conventions
+/// aren't a substitute, since a long-running session could otherwise
+/// accumulate decrypted copies of every attachment ever opened.
+pub fn cleanup_decrypted_attachment_temp_dir() {
+    fs::remove_dir_all(decrypted_attachment_temp_dir()).ok();
 }
 
 /// Turns free-form user search text into an FTS5 MATCH query: each word
@@ -1527,10 +1616,10 @@ mod tests {
         // Force a real snapshot of "Version one" before overwriting it,
         // bypassing the normal throttle so the test doesn't depend on
         // wall-clock timing.
-        versions::maybe_snapshot(&notes_root, &id, "Version one", true).unwrap();
+        versions::maybe_snapshot(&notes_root, &id, "Version one", true, &NoteCodec::Plain).unwrap();
         save_note_body(&conn, &notes_root, &id, "Version two", None, &NoteCodec::Plain).unwrap();
 
-        let snapshots = versions::list(&notes_root, &id).unwrap();
+        let snapshots = versions::list(&notes_root, &id, &NoteCodec::Plain).unwrap();
         let old_version = snapshots
             .iter()
             .find(|v| v.preview == "Version one")
@@ -1545,7 +1634,7 @@ mod tests {
 
         // Restoring must itself have snapshotted "Version two" so the
         // restore is undoable.
-        let snapshots_after = versions::list(&notes_root, &id).unwrap();
+        let snapshots_after = versions::list(&notes_root, &id, &NoteCodec::Plain).unwrap();
         assert!(snapshots_after.iter().any(|v| v.preview == "Version two"));
     }
 
@@ -1900,14 +1989,28 @@ mod tests {
         let notes_root = temp_dir("attach-root");
         fs::create_dir_all(&notes_root).unwrap();
 
-        let info = save_attachment(&notes_root, "note-1", "report.pdf", b"first").unwrap();
+        let info = save_attachment(
+            &notes_root,
+            "note-1",
+            "report.pdf",
+            b"first",
+            &NoteCodec::Plain,
+        )
+        .unwrap();
         assert_eq!(info.path, ".attachments/note-1/report.pdf");
         assert_eq!(info.name, "report.pdf");
         assert_eq!(info.size, 5);
 
         // A second attachment with the same filename gets a distinct name
         // instead of overwriting the first.
-        let info2 = save_attachment(&notes_root, "note-1", "report.pdf", b"second").unwrap();
+        let info2 = save_attachment(
+            &notes_root,
+            "note-1",
+            "report.pdf",
+            b"second",
+            &NoteCodec::Plain,
+        )
+        .unwrap();
         assert_eq!(info2.path, ".attachments/note-1/report 2.pdf");
 
         assert_eq!(
@@ -1921,7 +2024,14 @@ mod tests {
 
         // A hostile filename can't escape into an arbitrary location -
         // only its basename is used.
-        let escaped = save_attachment(&notes_root, "note-2", "../../etc/evil.txt", b"x").unwrap();
+        let escaped = save_attachment(
+            &notes_root,
+            "note-2",
+            "../../etc/evil.txt",
+            b"x",
+            &NoteCodec::Plain,
+        )
+        .unwrap();
         assert_eq!(escaped.path, ".attachments/note-2/evil.txt");
     }
 
@@ -1930,7 +2040,14 @@ mod tests {
         let notes_root = temp_dir("attach-size-root");
         fs::create_dir_all(&notes_root).unwrap();
 
-        let info = save_attachment(&notes_root, "note-1", "photo.png", b"bytes!!").unwrap();
+        let info = save_attachment(
+            &notes_root,
+            "note-1",
+            "photo.png",
+            b"bytes!!",
+            &NoteCodec::Plain,
+        )
+        .unwrap();
         assert_eq!(attachment_size(&notes_root, &info.path).unwrap(), 7);
 
         // A secret file elsewhere under notes_root is not reachable by
@@ -1949,11 +2066,76 @@ mod tests {
         let conn = db::init(&app_dir).unwrap();
 
         let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
-        save_attachment(&notes_root, &id, "notes.txt", b"hi").unwrap();
+        save_attachment(&notes_root, &id, "notes.txt", b"hi", &NoteCodec::Plain).unwrap();
         assert!(notes_root.join(ATTACHMENTS_DIR).join(&id).exists());
 
         delete_note_permanently(&conn, &notes_root, &id).unwrap();
         assert!(!notes_root.join(ATTACHMENTS_DIR).join(&id).exists());
+    }
+
+    #[test]
+    fn attachments_are_encrypted_on_disk_for_an_encrypted_vault() {
+        let notes_root = temp_dir("attach-encrypted-root");
+        fs::create_dir_all(&notes_root).unwrap();
+        let codec = NoteCodec::Encrypted(crate::vault_crypto::random_vault_key());
+
+        let info = save_attachment(
+            &notes_root,
+            "note-1",
+            "secret.txt",
+            b"private contents",
+            &codec,
+        )
+        .unwrap();
+
+        // The raw bytes on disk must not contain the plaintext.
+        let raw = fs::read(notes_root.join(&info.path)).unwrap();
+        assert!(!raw.windows(7).any(|w| w == b"private"));
+
+        // But reading it back through the same codec recovers it.
+        assert_eq!(
+            codec.read_bytes(&notes_root.join(&info.path)).unwrap(),
+            b"private contents"
+        );
+
+        // The wrong key must not be able to.
+        let wrong_codec = NoteCodec::Encrypted(crate::vault_crypto::random_vault_key());
+        assert!(
+            wrong_codec
+                .read_bytes(&notes_root.join(&info.path))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn open_attachment_path_decrypts_to_a_temp_copy_only_when_encrypted() {
+        let notes_root = temp_dir("attach-open-root");
+        fs::create_dir_all(&notes_root).unwrap();
+
+        // A plain vault: the attachment's own path, unchanged.
+        let plain_info = save_attachment(
+            &notes_root,
+            "note-1",
+            "doc.txt",
+            b"hello",
+            &NoteCodec::Plain,
+        )
+        .unwrap();
+        let plain_opened =
+            open_attachment_path(&notes_root, &plain_info.path, &NoteCodec::Plain).unwrap();
+        assert_eq!(plain_opened, notes_root.join(&plain_info.path));
+
+        // An encrypted vault: a fresh temp copy holding the decrypted bytes,
+        // with the same extension (so the OS still picks the right app).
+        let codec = NoteCodec::Encrypted(crate::vault_crypto::random_vault_key());
+        let enc_info = save_attachment(&notes_root, "note-2", "doc.txt", b"hello", &codec).unwrap();
+        let opened = open_attachment_path(&notes_root, &enc_info.path, &codec).unwrap();
+        assert_ne!(opened, notes_root.join(&enc_info.path));
+        assert_eq!(opened.extension().and_then(|e| e.to_str()), Some("txt"));
+        assert_eq!(fs::read(&opened).unwrap(), b"hello");
+
+        cleanup_decrypted_attachment_temp_dir();
+        assert!(!opened.exists());
     }
 
     #[test]
@@ -2065,6 +2247,68 @@ mod tests {
         assert_eq!(
             read_note_body(&notes_root, &new_rel, &codec).unwrap(),
             "Before\nmigration body"
+        );
+    }
+
+    #[test]
+    fn migrate_to_encrypted_also_encrypts_existing_attachments_and_versions() {
+        let app_dir = temp_dir("migrate-attach-app");
+        let notes_root = temp_dir("migrate-attach-root");
+        let conn = db::init(&app_dir).unwrap();
+
+        let id = create_note(&conn, &notes_root, "", false, &NoteCodec::Plain).unwrap();
+        save_note_body(
+            &conn,
+            &notes_root,
+            &id,
+            "Title\nbody one",
+            None,
+            &NoteCodec::Plain,
+        )
+        .unwrap();
+        // A second save (after the throttle-bypassing first snapshot isn't
+        // needed here - a fresh note's first save never snapshots anything,
+        // so force one directly) leaves one plaintext version snapshot on
+        // disk, same as a real vault accumulates over time.
+        versions::maybe_snapshot(&notes_root, &id, "Title\nbody one", true, &NoteCodec::Plain)
+            .unwrap();
+        let attachment = save_attachment(
+            &notes_root,
+            &id,
+            "notes.txt",
+            b"plain attachment",
+            &NoteCodec::Plain,
+        )
+        .unwrap();
+
+        // Both must exist as plaintext before migration.
+        let attachment_abs = notes_root.join(&attachment.path);
+        assert_eq!(fs::read(&attachment_abs).unwrap(), b"plain attachment");
+        let version_path = notes_root.join(versions::VERSIONS_DIR).join(&id);
+        assert!(version_path.exists());
+
+        let key = crate::vault_crypto::random_vault_key();
+        let migrated = migrate_to_encrypted(&conn, &notes_root, &key).unwrap();
+        // The note itself, the one version snapshot, and the one attachment.
+        assert_eq!(migrated, 3);
+
+        let codec = NoteCodec::Encrypted(key);
+
+        // The attachment file's path is unchanged, but its bytes are now
+        // ciphertext - readable only through the codec.
+        let raw_attachment = fs::read(&attachment_abs).unwrap();
+        assert!(!raw_attachment.windows(5).any(|w| w == b"plain"));
+        assert_eq!(
+            codec.read_bytes(&attachment_abs).unwrap(),
+            b"plain attachment"
+        );
+
+        // The version snapshot is likewise now encrypted in place.
+        let versions_list = versions::list(&notes_root, &id, &codec).unwrap();
+        assert_eq!(versions_list.len(), 1);
+        assert_eq!(
+            versions::get(&notes_root, &id, &versions_list[0].timestamp, &codec).unwrap(),
+            "Title\nbody one"
         );
     }
 }

@@ -49,20 +49,30 @@ impl NoteCodec {
     /// encrypted. `fs::read` (not `read_to_string`) since encrypted content
     /// is binary, not valid UTF-8, until decrypted.
     pub fn read(&self, path: &Path) -> VaultResult<String> {
-        let bytes = fs::read(path).map_err(|e| e.to_string())?;
-        let plain = match self {
-            Self::Plain => bytes,
-            Self::Encrypted(key) => vault_crypto::decrypt(key, &bytes)?,
-        };
-        String::from_utf8(plain).map_err(|e| e.to_string())
+        String::from_utf8(self.read_bytes(path)?).map_err(|e| e.to_string())
     }
 
     pub fn write(&self, path: &Path, content: &str) -> VaultResult<()> {
-        let bytes = match self {
-            Self::Plain => content.as_bytes().to_vec(),
-            Self::Encrypted(key) => vault_crypto::encrypt(key, content.as_bytes())?,
+        self.write_bytes(path, content.as_bytes())
+    }
+
+    /// The byte-level counterpart of [`read`](Self::read)/[`write`](Self::write),
+    /// for content that isn't (necessarily) UTF-8 text - attachments, in
+    /// particular. Same codec, same key, just no String conversion step.
+    pub fn read_bytes(&self, path: &Path) -> VaultResult<Vec<u8>> {
+        let bytes = fs::read(path).map_err(|e| e.to_string())?;
+        match self {
+            Self::Plain => Ok(bytes),
+            Self::Encrypted(key) => vault_crypto::decrypt(key, &bytes),
+        }
+    }
+
+    pub fn write_bytes(&self, path: &Path, bytes: &[u8]) -> VaultResult<()> {
+        let out = match self {
+            Self::Plain => bytes.to_vec(),
+            Self::Encrypted(key) => vault_crypto::encrypt(key, bytes)?,
         };
-        fs::write(path, bytes).map_err(|e| e.to_string())
+        fs::write(path, out).map_err(|e| e.to_string())
     }
 }
 
@@ -249,5 +259,28 @@ mod tests {
         // The bytes actually on disk must not contain the plaintext.
         let raw = fs::read(&encrypted_path).unwrap();
         assert!(!raw.windows(6).any(|w| w == b"secret"));
+    }
+
+    #[test]
+    fn note_codec_round_trips_arbitrary_bytes() {
+        let dir = temp_dir("codec-bytes-round-trip");
+        // Not valid UTF-8 - read()/write() couldn't handle this; read_bytes()/
+        // write_bytes() must, since attachments are arbitrary binary data.
+        let non_utf8: &[u8] = &[0xFF, 0x00, 0xFE, 0x12, 0x80, 0x81];
+
+        let plain_path = dir.join("file.bin");
+        NoteCodec::Plain.write_bytes(&plain_path, non_utf8).unwrap();
+        assert_eq!(NoteCodec::Plain.read_bytes(&plain_path).unwrap(), non_utf8);
+
+        let key = vault_crypto::random_vault_key();
+        let codec = NoteCodec::Encrypted(key);
+        let encrypted_path = dir.join("file.bin.enc");
+        codec.write_bytes(&encrypted_path, non_utf8).unwrap();
+        assert_eq!(codec.read_bytes(&encrypted_path).unwrap(), non_utf8);
+
+        // The bytes on disk must differ from the plaintext (actually encrypted,
+        // not just copied through).
+        let raw = fs::read(&encrypted_path).unwrap();
+        assert_ne!(raw, non_utf8);
     }
 }

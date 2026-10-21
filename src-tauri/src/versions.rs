@@ -6,12 +6,13 @@ use serde::Serialize;
 
 use crate::note_file;
 use crate::store::StoreResult;
+use crate::vault::NoteCodec;
 
 /// Snapshots live under notes_root/.versions/<note-id>/<epoch-millis>.md,
 /// a hidden sibling of the notes themselves - like .attachments, this
 /// keeps them out of the main full_rescan walk (which skips dot-prefixed
 /// entries) while still traveling with the notes folder across a sync.
-const VERSIONS_DIR: &str = ".versions";
+pub(crate) const VERSIONS_DIR: &str = ".versions";
 
 /// Snapshots are throttled to roughly this often per note while actively
 /// editing, so autosave (which fires on every ~500ms pause in typing)
@@ -64,6 +65,7 @@ pub fn maybe_snapshot(
     note_id: &str,
     body: &str,
     force: bool,
+    codec: &NoteCodec,
 ) -> StoreResult<()> {
     if body.trim().is_empty() {
         return Ok(());
@@ -88,7 +90,7 @@ pub fn maybe_snapshot(
     }
 
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    fs::write(dir.join(filename_for(now)), body).map_err(|e| e.to_string())?;
+    codec.write(&dir.join(filename_for(now)), body)?;
 
     millis.push(now);
     if millis.len() > MAX_SNAPSHOTS_PER_NOTE {
@@ -100,7 +102,7 @@ pub fn maybe_snapshot(
 }
 
 /// Lists a note's snapshots, newest first.
-pub fn list(notes_root: &Path, note_id: &str) -> StoreResult<Vec<VersionInfo>> {
+pub fn list(notes_root: &Path, note_id: &str, codec: &NoteCodec) -> StoreResult<Vec<VersionInfo>> {
     let dir = dir_for(notes_root, note_id);
     let mut millis = list_millis(&dir);
     millis.reverse();
@@ -108,8 +110,7 @@ pub fn list(notes_root: &Path, note_id: &str) -> StoreResult<Vec<VersionInfo>> {
     millis
         .into_iter()
         .map(|m| {
-            let body =
-                fs::read_to_string(dir.join(filename_for(m))).map_err(|e| e.to_string())?;
+            let body = codec.read(&dir.join(filename_for(m)))?;
             let timestamp = Utc
                 .timestamp_millis_opt(m)
                 .single()
@@ -129,9 +130,14 @@ fn path_for_timestamp(notes_root: &Path, note_id: &str, timestamp: &str) -> Stor
 }
 
 /// Reads one snapshot's body back out.
-pub fn get(notes_root: &Path, note_id: &str, timestamp: &str) -> StoreResult<String> {
+pub fn get(
+    notes_root: &Path,
+    note_id: &str,
+    timestamp: &str,
+    codec: &NoteCodec,
+) -> StoreResult<String> {
     let path = path_for_timestamp(notes_root, note_id, timestamp)?;
-    fs::read_to_string(path).map_err(|e| e.to_string())
+    codec.read(&path)
 }
 
 /// Deletes every snapshot for a note, called when the note itself is
@@ -155,13 +161,13 @@ mod tests {
     fn snapshots_throttle_but_force_bypasses() {
         let root = temp_dir("throttle");
 
-        maybe_snapshot(&root, "n1", "first", false).unwrap();
-        maybe_snapshot(&root, "n1", "second", false).unwrap();
-        let versions = list(&root, "n1").unwrap();
+        maybe_snapshot(&root, "n1", "first", false, &NoteCodec::Plain).unwrap();
+        maybe_snapshot(&root, "n1", "second", false, &NoteCodec::Plain).unwrap();
+        let versions = list(&root, "n1", &NoteCodec::Plain).unwrap();
         assert_eq!(versions.len(), 1, "second snapshot should be throttled");
 
-        maybe_snapshot(&root, "n1", "third", true).unwrap();
-        let versions = list(&root, "n1").unwrap();
+        maybe_snapshot(&root, "n1", "third", true, &NoteCodec::Plain).unwrap();
+        let versions = list(&root, "n1", &NoteCodec::Plain).unwrap();
         assert_eq!(versions.len(), 2, "forced snapshot bypasses the throttle");
         assert_eq!(versions[0].preview, "third", "newest listed first");
     }
@@ -169,24 +175,52 @@ mod tests {
     #[test]
     fn blank_body_is_never_snapshotted() {
         let root = temp_dir("blank");
-        maybe_snapshot(&root, "n1", "   \n  ", false).unwrap();
-        assert!(list(&root, "n1").unwrap().is_empty());
+        maybe_snapshot(&root, "n1", "   \n  ", false, &NoteCodec::Plain).unwrap();
+        assert!(list(&root, "n1", &NoteCodec::Plain).unwrap().is_empty());
     }
 
     #[test]
     fn get_round_trips_a_listed_snapshot() {
         let root = temp_dir("roundtrip");
-        maybe_snapshot(&root, "n1", "hello world", false).unwrap();
-        let versions = list(&root, "n1").unwrap();
-        let body = get(&root, "n1", &versions[0].timestamp).unwrap();
+        maybe_snapshot(&root, "n1", "hello world", false, &NoteCodec::Plain).unwrap();
+        let versions = list(&root, "n1", &NoteCodec::Plain).unwrap();
+        let body = get(&root, "n1", &versions[0].timestamp, &NoteCodec::Plain).unwrap();
         assert_eq!(body, "hello world");
     }
 
     #[test]
     fn delete_all_removes_the_note_versions_dir() {
         let root = temp_dir("delete-all");
-        maybe_snapshot(&root, "n1", "hello", false).unwrap();
+        maybe_snapshot(&root, "n1", "hello", false, &NoteCodec::Plain).unwrap();
         delete_all(&root, "n1");
-        assert!(list(&root, "n1").unwrap().is_empty());
+        assert!(list(&root, "n1", &NoteCodec::Plain).unwrap().is_empty());
+    }
+
+    #[test]
+    fn snapshots_are_encrypted_on_disk_for_an_encrypted_vault() {
+        let root = temp_dir("encrypted");
+        let codec = NoteCodec::Encrypted(crate::vault_crypto::random_vault_key());
+
+        maybe_snapshot(&root, "n1", "Secret Title\nsecret body", false, &codec).unwrap();
+        let versions = list(&root, "n1", &codec).unwrap();
+        assert_eq!(versions[0].preview, "Secret Title");
+        assert_eq!(
+            get(&root, "n1", &versions[0].timestamp, &codec).unwrap(),
+            "Secret Title\nsecret body"
+        );
+
+        // The wrong key must not be able to read it, and the raw bytes on
+        // disk must not contain the plaintext title/body.
+        let wrong_codec = NoteCodec::Encrypted(crate::vault_crypto::random_vault_key());
+        assert!(get(&root, "n1", &versions[0].timestamp, &wrong_codec).is_err());
+        let raw = fs::read(
+            dir_for(&root, "n1").join(filename_for(
+                chrono::DateTime::parse_from_rfc3339(&versions[0].timestamp)
+                    .unwrap()
+                    .timestamp_millis(),
+            )),
+        )
+        .unwrap();
+        assert!(!raw.windows(6).any(|w| w == b"secret"));
     }
 }

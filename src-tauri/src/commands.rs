@@ -497,10 +497,12 @@ pub fn save_note_body(
 #[tauri::command]
 pub fn list_note_versions(
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     id: String,
 ) -> Result<Vec<versions::VersionInfo>, String> {
     let notes_root = require_notes_root(&root_state)?;
-    versions::list(&notes_root, &id)
+    let codec = require_codec(&vault_state, &notes_root)?;
+    versions::list(&notes_root, &id, &codec)
 }
 
 #[tauri::command]
@@ -714,17 +716,28 @@ pub fn move_note(
 #[tauri::command]
 pub fn save_attachment(
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     note_id: String,
     filename: String,
     bytes: Vec<u8>,
 ) -> Result<AttachmentDto, String> {
     let notes_root = require_notes_root(&root_state)?;
-    store::save_attachment(&notes_root, &note_id, &filename, &bytes).map(Into::into)
+    let codec = require_codec(&vault_state, &notes_root)?;
+    store::save_attachment(&notes_root, &note_id, &filename, &bytes, &codec).map(Into::into)
 }
 
 #[tauri::command]
-pub fn get_attachment_size(root_state: State<NotesRootState>, path: String) -> Result<u64, String> {
+pub fn get_attachment_size(
+    root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
+    path: String,
+) -> Result<u64, String> {
     let notes_root = require_notes_root(&root_state)?;
+    // Gated the same as every other attachment/note-content command (see
+    // require_codec's doc comment) even though the size itself is read
+    // straight off disk either way - a locked vault must refuse this too,
+    // not just actual content reads.
+    require_codec(&vault_state, &notes_root)?;
     store::attachment_size(&notes_root, &path)
 }
 
@@ -732,10 +745,16 @@ pub fn get_attachment_size(root_state: State<NotesRootState>, path: String) -> R
 pub fn open_attachment(
     app: AppHandle,
     root_state: State<NotesRootState>,
+    vault_state: State<VaultState>,
     path: String,
 ) -> Result<(), String> {
     let notes_root = require_notes_root(&root_state)?;
-    let abs = store::attachment_absolute_path(&notes_root, &path)?;
+    let codec = require_codec(&vault_state, &notes_root)?;
+    // For an encrypted vault, the file on disk is ciphertext - the OS's
+    // opener (handing off to whatever app owns this file type) needs real
+    // bytes, so this decrypts to a throwaway temp file first; for a plain
+    // vault it's just the attachment's own path, unchanged from before.
+    let abs = store::open_attachment_path(&notes_root, &path, &codec)?;
     use tauri_plugin_opener::OpenerExt;
     app.opener()
         .open_path(abs.to_string_lossy(), None::<&str>)

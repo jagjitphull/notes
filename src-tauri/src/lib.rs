@@ -130,6 +130,13 @@ pub fn run() {
             app.manage(NotesRootState(Mutex::new(config.notes_root)));
             app.manage(vault::VaultState::new());
 
+            // Clears out any decrypted-attachment temp copies left behind
+            // by a previous run's "Open" command (see
+            // store::open_attachment_path) - done once here, up front,
+            // rather than right after each open, since there's no reliable
+            // signal for "the external app that opened one is done with it".
+            store::cleanup_decrypted_attachment_temp_dir();
+
             // System tray: lets the app keep running (and its file watcher
             // keep syncing) after the window is closed, same as most tray
             // apps. Left/right-click distinction is unsupported on Linux

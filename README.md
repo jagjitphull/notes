@@ -189,12 +189,36 @@ than in `src-tauri/target/`, since none of them are generated output:
   exists yet to pin a source-tarball checksum against) that builds from
   source, per AUR convention.
 
-None of these have been build-tested here: `flatpak-builder`, `snapcraft`,
-and `makepkg` aren't available in this environment. The manifests follow
-each format's standard conventions and their YAML/PKGBUILD syntax has been
-validated, but an actual `flatpak-builder`/`snapcraft`/`makepkg` run (and,
-for the AUR package, an upload + install by someone with an Arch machine)
-is still needed before treating any of them as verified.
+None of these can be fully build-tested in this dev environment, though not
+for lack of trying — the actual blocker in each case is the sandbox's network
+policy, not missing tooling:
+
+- **Flatpak**: `flatpak`/`flatpak-builder` install fine via `apt`, but
+  Flathub (`dl.flathub.org`), where the `org.gnome.Platform`/`org.gnome.Sdk`
+  runtimes `flatpak-builder` needs come from, is not reachable. `flatpak
+  remote-add` and a direct runtime install both fail at that host.
+- **Snap**: `snapd` installs, but this sandbox has no `systemd` (PID 1 isn't
+  it), so `snapd` can only run unmanaged and in `devmode`; even so, the Snap
+  Store API (`api.snapcraft.io`) — needed both to install `snapcraft` itself
+  and to fetch the `core22` base/`gnome` extension during a build — is also
+  not reachable.
+- **AUR**: `makepkg` is Arch-specific tooling with no Ubuntu equivalent, and
+  there's no way to stand up an Arch environment here either (no Docker
+  daemon available, and the AUR/Arch package mirrors are themselves not
+  reachable from this sandbox).
+
+What *was* verified here: a real `cargo tauri build --no-bundle` release
+build (this also caught `flatpak/README.md` documenting a now-removed
+`--bundles none` flag — fixed to `--no-bundle`), the AUR `PKGBUILD`'s
+`package()` step run by hand against that real build (every installed path
+matches, including icons/desktop file/license), `cargo build --release
+--locked` (what the PKGBUILD's `build()` actually runs) succeeding cleanly,
+and the shared `packaging/linux/dev.jagjitphull.notes.desktop`/`.metainfo.xml`
+both passing `desktop-file-validate`/`appstreamcli validate`. What's still
+needed before treating any of the three as verified: an actual
+`flatpak-builder`/`snapcraft`/`makepkg` run on a machine (or CI runner) with
+real access to Flathub/the Snap Store/Arch's infrastructure, and for AUR,
+an upload + install by someone with an Arch machine.
 
 ## Releasing (CI-built, signed, auto-updating)
 

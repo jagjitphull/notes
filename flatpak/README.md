@@ -30,7 +30,7 @@ git submodule add https://github.com/flathub/shared-modules.git flatpak/shared-m
 ## Building
 
 ```
-cargo tauri build --bundles none   # produces src-tauri/target/release/notes
+cargo tauri build --no-bundle   # produces src-tauri/target/release/notes
 flatpak-builder --user --install build-dir flatpak/dev.jagjitphull.notes.yml
 flatpak run dev.jagjitphull.notes
 ```

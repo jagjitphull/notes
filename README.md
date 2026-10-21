@@ -333,6 +333,13 @@ doesn't know about.
   rather than quitting, so the app keeps syncing in the background; Quit
   from the tray menu exits for real) and a 30-day auto-purge of Recently
   Deleted, matching Apple Notes' retention window.
+- **Native application menu**: a real File/Edit/View/Window/Help menu bar
+  (plus a macOS app submenu), wired to the same handlers as the keyboard
+  shortcuts and command palette - a menu click, Ctrl/Cmd+N, and picking
+  "New Note" from the command palette all call the exact same function.
+  Standard items (Undo/Redo/Cut/Copy/Paste/Quit/...) use Tauri's
+  predefined menu items for correct native OS behavior; see
+  `src-tauri/src/app_menu.rs`.
 - **Editor & layout extras**: a text highlighter mark (`==text==`,
   Obsidian-compatible, round-trips through Markdown); resizable and
   collapsible sidebar/note-list panes with drag handles and

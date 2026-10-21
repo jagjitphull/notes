@@ -45,6 +45,7 @@ import {
   smartSearchAvailable,
   vaultStatus,
   lockVault,
+  openExternalLink,
 } from "./api";
 import { useAppUpdater } from "./composables/useAppUpdater";
 import { usePaneLayout } from "./composables/usePaneLayout";
@@ -152,6 +153,7 @@ function showToast(message: string) {
 
 let unlistenNotesChanged: UnlistenFn | null = null;
 let unlistenQuickCapture: UnlistenFn | null = null;
+let unlistenMenu: UnlistenFn | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let smartSearchAvailabilityTimer: ReturnType<typeof setInterval> | undefined;
@@ -188,6 +190,9 @@ onMounted(async () => {
   unlistenQuickCapture = await listen("quick-capture", () => {
     onQuickCapture();
   });
+  unlistenMenu = await listen<string>("menu", (event) => {
+    onMenuAction(event.payload);
+  });
 
   notesRoot.value = await getNotesRoot();
   if (notesRoot.value) {
@@ -212,6 +217,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenNotesChanged?.();
   unlistenQuickCapture?.();
+  unlistenMenu?.();
   if (smartSearchAvailabilityTimer !== undefined) clearInterval(smartSearchAvailabilityTimer);
 });
 
@@ -592,6 +598,37 @@ const paletteActions = computed<PaletteAction[]>(() => [
   },
 ]);
 
+const GITHUB_URL = "https://github.com/jagjitphull/notes";
+
+// The native menu bar (File/Edit/View/Window/Help - see app_menu.rs) emits
+// a "menu" event carrying a custom item's id. Most ids are already
+// commands in paletteActions above (the command palette's own registry),
+// so a menu click, Ctrl/Cmd+<key>, and a command-palette selection all
+// call the exact same handler; only the handful of ids that aren't
+// palette actions (opening the palette itself, among them) get a case
+// here.
+function onMenuAction(id: string) {
+  switch (id) {
+    case "new-folder":
+      promptNewFolder("");
+      return;
+    case "find":
+      openFindOrSearch();
+      return;
+    case "command-palette":
+      commandPaletteOpen.value = true;
+      return;
+    case "about":
+      aboutModalOpen.value = true;
+      return;
+    case "github":
+      openExternalLink(GITHUB_URL).catch((e) => console.error("failed to open link", e));
+      return;
+    default:
+      paletteActions.value.find((a) => a.id === id)?.run();
+  }
+}
+
 function onPaletteSelectNote(id: string) {
   selectedId.value = "all";
   selectedNoteId.value = id;
@@ -877,6 +914,22 @@ function navigateList(direction: number) {
   selectedNoteId.value = list[nextIndex].id;
 }
 
+// Shared by the Ctrl/Cmd+F shortcut and the Edit > Find menu item: finds
+// in the open note if the editor has focus, otherwise focuses the sidebar
+// search box (expanding the sidebar first if it's collapsed).
+function openFindOrSearch() {
+  if (selectedNote.value && isEditorFocused()) {
+    editorRef.value?.openFind();
+    return;
+  }
+  if (sidebarCollapsed.value) {
+    sidebarCollapsed.value = false;
+    nextTick(() => sidebarRef.value?.focusSearch());
+  } else {
+    sidebarRef.value?.focusSearch();
+  }
+}
+
 function onGlobalKeydown(e: KeyboardEvent) {
   // While a context menu or dialog is open, its own keydown handler owns
   // the keyboard (WAI-ARIA menu/dialog patterns) - without this guard,
@@ -894,16 +947,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
   if (mod && e.key.toLowerCase() === "f") {
     e.preventDefault();
-    if (selectedNote.value && isEditorFocused()) {
-      editorRef.value?.openFind();
-      return;
-    }
-    if (sidebarCollapsed.value) {
-      sidebarCollapsed.value = false;
-      nextTick(() => sidebarRef.value?.focusSearch());
-    } else {
-      sidebarRef.value?.focusSearch();
-    }
+    openFindOrSearch();
     return;
   }
 

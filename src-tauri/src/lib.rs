@@ -1,3 +1,4 @@
+mod app_menu;
 mod backup;
 mod commands;
 pub mod config;
@@ -136,6 +137,14 @@ pub fn run() {
             // rather than right after each open, since there's no reliable
             // signal for "the external app that opened one is done with it".
             store::cleanup_decrypted_attachment_temp_dir();
+
+            // Native application menu (File/Edit/View/Window/Help) - a
+            // separate, independent menu from the tray's own one below.
+            // Custom items forward their id to the frontend as a "menu"
+            // event; see app_menu.rs for why predefined items (Undo,
+            // Copy, Quit, ...) need no handling here at all.
+            app.set_menu(app_menu::build(app.handle())?)?;
+            app.on_menu_event(app_menu::handle_event);
 
             // System tray: lets the app keep running (and its file watcher
             // keep syncing) after the window is closed, same as most tray

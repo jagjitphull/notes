@@ -1,9 +1,19 @@
 node_modules
 *.local
 
+# E2E smoke test output (see e2e/smoke-test.sh)
+e2e/screenshots/
+
 # Local SQLite databases (if ever run outside the OS app-data dir)
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
 
 .DS_Store
+
+# Updater signing keys must never be committed - the private half lives
+# only in the TAURI_SIGNING_PRIVATE_KEY* GitHub secrets (see README's
+# "Releasing" section). This is a safety net, not the actual boundary:
+# the key is generated outside the repo and was never in it.
+*.key
+*.key.pub

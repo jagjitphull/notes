@@ -5,16 +5,18 @@ fn migrations_create_expected_schema_and_fts_works() {
     let tmp = tempfile_dir();
     let conn = db::init(&tmp).expect("db init should succeed");
 
-    // Default folder seeded.
+    // Root folder seeded (id '' = the notes root itself, shown as "Notes").
     let folder_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM folders", [], |r| r.get(0))
         .unwrap();
     assert_eq!(folder_count, 1);
 
-    // Insert a note and confirm FTS5 picks it up via triggers.
+    // Insert a note and confirm FTS5 picks it up via triggers. Note content
+    // itself lives in Markdown files on disk (see store.rs); this table
+    // only mirrors title/plaintext_content for fast search.
     conn.execute(
-        "INSERT INTO notes (id, title, content, plaintext_content, folder_id)
-         VALUES ('n1', 'Grocery List', '<p>milk eggs bread</p>', 'milk eggs bread', 'default')",
+        "INSERT INTO notes (id, file_path, title, plaintext_content, folder_id, created_at, updated_at)
+         VALUES ('n1', 'Grocery List.md', 'Grocery List', 'milk eggs bread', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
         [],
     )
     .unwrap();

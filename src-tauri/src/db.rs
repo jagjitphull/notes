@@ -3,13 +3,33 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
-/// Embedded schema migrations, applied in order on every startup.
-/// Each statement uses `IF NOT EXISTS` / idempotent guards, so re-applying
-/// an already-migrated database is a no-op.
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "0001_init",
-    include_str!("../migrations/0001_init.sql"),
-)];
+/// Embedded schema migrations, applied in order on every startup. Each is
+/// tracked in `schema_migrations` and runs at most once per database, so a
+/// migration doesn't need to be idempotent on its own (e.g. a later one may
+/// safely `DROP TABLE` and redefine what an earlier one created).
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../migrations/0001_init.sql")),
+    (
+        "0002_file_backed_notes",
+        include_str!("../migrations/0002_file_backed_notes.sql"),
+    ),
+    (
+        "0003_smart_search_embeddings",
+        include_str!("../migrations/0003_smart_search_embeddings.sql"),
+    ),
+    (
+        "0004_folder_colors",
+        include_str!("../migrations/0004_folder_colors.sql"),
+    ),
+    (
+        "0005_tag_colors",
+        include_str!("../migrations/0005_tag_colors.sql"),
+    ),
+    (
+        "0006_note_templates",
+        include_str!("../migrations/0006_note_templates.sql"),
+    ),
+];
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -20,7 +40,9 @@ pub fn init(app_data_dir: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(db_path)?;
     // `journal_mode` returns the resulting mode as a row, so it can't go
     // through `pragma_update` (which expects no result set).
-    conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get::<_, String>(0))?;
+    conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
+        row.get::<_, String>(0)
+    })?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
 
     run_migrations(&conn)?;
@@ -50,10 +72,7 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         }
 
         conn.execute_batch(sql)?;
-        conn.execute(
-            "INSERT INTO schema_migrations (name) VALUES (?1)",
-            [name],
-        )?;
+        conn.execute("INSERT INTO schema_migrations (name) VALUES (?1)", [name])?;
     }
 
     Ok(())

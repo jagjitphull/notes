@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch, type ComponentPublicInstance } from "vue";
 import { useI18n } from "vue-i18n";
+import { useVirtualizer } from "@tanstack/vue-virtual";
 import Icon from "./icons/Icon.vue";
 import type { Note } from "../types";
 
@@ -25,16 +26,27 @@ const selectedId = defineModel<string | null>("selectedId", { default: null });
 
 const { t } = useI18n();
 
-const pinnedCount = computed(() =>
-  props.showPinnedSections ? props.notes.filter((n) => n.isPinned).length : 0,
-);
+// Flattened once here (section labels + note rows interleaved), rather
+// than recomputed per-row from an index during render (the pre-virtualized
+// version's sectionFor(index)) - the virtualizer needs a single flat,
+// index-addressable row list up front to size and position things, and
+// pulling this out keeps that list the one place the two row kinds mix.
+type Row = { kind: "section"; key: string; label: string } | { kind: "note"; key: string; note: Note };
 
-function sectionFor(index: number): "pinned" | "notes" | null {
-  if (!props.showPinnedSections || pinnedCount.value === 0) return null;
-  if (index === 0) return "pinned";
-  if (index === pinnedCount.value) return "notes";
-  return null;
-}
+const rows = computed<Row[]>(() => {
+  const pinnedCount = props.showPinnedSections ? props.notes.filter((n) => n.isPinned).length : 0;
+  const out: Row[] = [];
+  props.notes.forEach((note, index) => {
+    if (pinnedCount > 0 && index === 0) {
+      out.push({ kind: "section", key: "section-pinned", label: t("noteList.pinned") });
+    }
+    if (pinnedCount > 0 && index === pinnedCount) {
+      out.push({ kind: "section", key: "section-notes", label: t("common.notes") });
+    }
+    out.push({ kind: "note", key: note.id, note });
+  });
+  return out;
+});
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -64,6 +76,50 @@ function formatDate(iso: string): string {
 function preview(note: Note): string {
   return note.plaintextContent.split("\n").slice(0, 2).join(" ");
 }
+
+const scrollAreaRef = ref<HTMLElement | null>(null);
+
+// Estimates only - refined against each row's real rendered height once it
+// first mounts (see :ref="measureRow" below), so these don't need to be
+// pixel-perfect across platforms/font rendering, just close enough that
+// the initial scrollbar size/position isn't visibly wrong before that
+// measurement pass catches up.
+const SECTION_ESTIMATE = 36;
+const NOTE_ESTIMATE = 92;
+
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: rows.value.length,
+    getScrollElement: () => scrollAreaRef.value,
+    estimateSize: (index: number) => (rows.value[index]?.kind === "section" ? SECTION_ESTIMATE : NOTE_ESTIMATE),
+    getItemKey: (index: number) => rows.value[index]?.key ?? index,
+    overscan: 8,
+  })),
+);
+
+function measureRow(el: Element | ComponentPublicInstance | null) {
+  if (el instanceof HTMLElement) virtualizer.value.measureElement(el);
+}
+
+// Pairs each rendered virtual row with its actual data, so the template
+// below can switch on item.row.kind once per row instead of repeatedly
+// indexing into rows[] (and re-asserting its type) at every usage site.
+const visibleRows = computed(() =>
+  virtualizer.value.getVirtualItems().map((v) => ({ index: v.index, start: v.start, row: rows.value[v.index] })),
+);
+
+// Keyboard arrow-key navigation (App.vue's navigateList) just moves
+// selectedId by index - it doesn't know or care which rows are actually
+// rendered, so without this, moving selection past the virtualized
+// window wouldn't visibly do anything until the user scrolled there
+// themselves.
+watch(selectedId, (id) => {
+  if (id === null) return;
+  const index = rows.value.findIndex((r) => r.kind === "note" && r.note.id === id);
+  if (index !== -1) virtualizer.value.scrollToIndex(index, { align: "auto" });
+});
+
+defineExpose({ virtualizer });
 </script>
 
 <template>
@@ -104,37 +160,58 @@ function preview(note: Note): string {
       {{ t('noteList.trashNotice') }}
     </p>
 
-    <div class="scroll-area">
+    <div ref="scrollAreaRef" class="scroll-area">
       <p v-if="notes.length === 0 && isTemplates" class="empty-state">
         {{ t('noteList.emptyTemplates') }}
       </p>
       <p v-else-if="notes.length === 0" class="empty-state">{{ t('noteList.empty') }}</p>
 
-      <ul v-else class="items">
-        <template v-for="(note, index) in notes" :key="note.id">
-          <li v-if="sectionFor(index) === 'pinned'" class="section-label">{{ t('noteList.pinned') }}</li>
-          <li v-if="sectionFor(index) === 'notes'" class="section-label">{{ t('common.notes') }}</li>
-          <li>
+      <div
+        v-else
+        role="list"
+        class="items"
+        :style="{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }"
+      >
+        <template v-for="item in visibleRows" :key="item.row.key">
+          <div
+            v-if="item.row.kind === 'section'"
+            :ref="measureRow"
+            :data-index="item.index"
+            class="section-label"
+            :style="{ transform: `translateY(${item.start}px)` }"
+          >
+            {{ item.row.label }}
+          </div>
+          <div
+            v-else
+            :ref="measureRow"
+            :data-index="item.index"
+            role="listitem"
+            :style="{ transform: `translateY(${item.start}px)` }"
+            class="row"
+          >
             <button
               class="note-item"
-              :class="{ active: selectedId === note.id }"
-              :aria-current="selectedId === note.id ? 'true' : undefined"
-              @click="selectedId = note.id"
+              :class="{ active: selectedId === item.row.note.id }"
+              :aria-current="selectedId === item.row.note.id ? 'true' : undefined"
+              @click="selectedId = item.row.note.id"
               @contextmenu.prevent="
-                selectedId = note.id;
-                emit('contextmenu', $event, note);
+                selectedId = item.row.note.id;
+                emit('contextmenu', $event, item.row.note);
               "
             >
               <div class="note-title-row">
-                <span class="note-title">{{ note.title || t('common.newNote') }}</span>
-                <Icon v-if="note.isPinned" class="pin-icon" name="pin" />
+                <span class="note-title">{{ item.row.note.title || t('common.newNote') }}</span>
+                <Icon v-if="item.row.note.isPinned" class="pin-icon" name="pin" />
               </div>
-              <div class="note-meta">{{ formatDate(note.updatedAt) }}</div>
-              <div class="note-preview">{{ preview(note) }}</div>
+              <div class="note-meta">
+                {{ formatDate(item.row.note.updatedAt) }}
+              </div>
+              <div class="note-preview">{{ preview(item.row.note) }}</div>
             </button>
-          </li>
+          </div>
         </template>
-      </ul>
+      </div>
     </div>
   </section>
 </template>
@@ -206,6 +283,15 @@ function preview(note: Note): string {
   padding: 0;
 }
 
+.row,
+.section-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .section-label {
   font-size: 12px;
   font-weight: 600;
@@ -223,6 +309,7 @@ function preview(note: Note): string {
   padding: 8px 10px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
 }
 
 .note-item:hover {

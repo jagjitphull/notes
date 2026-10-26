@@ -66,6 +66,13 @@ const Highlight = HighlightBase.extend({
   },
 });
 
+// DrawingCanvas below is a second root node alongside <main> (it teleports
+// its own content elsewhere, but the template still has two top-level
+// children as far as Vue's attrs-fallthrough is concerned), so Vue can't
+// tell which one App.vue's `style="grid-column: 5"` is meant for and drops
+// it silently - bind it onto <main> explicitly instead of relying on that.
+defineOptions({ inheritAttrs: false });
+
 const props = defineProps<{
   note: Note | null;
   notes: Note[];
@@ -918,7 +925,7 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
 </script>
 
 <template>
-  <main class="editor">
+  <main class="editor" v-bind="$attrs">
     <template v-if="note">
       <div class="editor-toolbar">
         <div class="format-bar">

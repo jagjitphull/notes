@@ -87,6 +87,7 @@ const {
   sidebarVisible,
   listVisible,
   gridTemplateColumns,
+  topBarBackground,
   startResize,
   stepResize,
   bounds: paneBounds,
@@ -990,7 +991,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   <VaultUnlock v-else-if="!loading && !vaultUnlocked" @unlocked="onVaultUnlocked" />
 
   <div v-else-if="!loading" class="app-root">
-    <div class="top-bar">
+    <div class="top-bar" :style="{ background: topBarBackground }">
       <div class="top-bar-start">
         <button
           class="pane-toggle"
@@ -1183,11 +1184,13 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 5px 5px 8px;
-  background: var(--bg-sidebar);
-  border-bottom: 1px solid var(--border);
-  /* Keeps the row from looking cramped around its 26px buttons. */
-  min-height: 38px;
+  padding: 3px 5px 3px 8px;
+  /* background is bound inline (topBarBackground) - a hard-stop gradient
+     continuing each pane's own color up through this row, so empty space
+     here reads as "the top of that pane" rather than its own dead strip.
+     No border-bottom: the color changes at each pane boundary already
+     separate it visually from app-shell without a second seam on top. */
+  min-height: 30px;
   box-sizing: border-box;
 }
 

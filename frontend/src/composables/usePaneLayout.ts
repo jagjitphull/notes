@@ -54,6 +54,29 @@ export function usePaneLayout() {
     return `${sidebar} ${sidebarHandle} ${list} ${listHandle} 1fr`;
   });
 
+  // A hard-stop gradient that continues each pane's own background color
+  // up through the top bar, at the exact pixel boundaries gridTemplateColumns
+  // uses below it - so the top bar reads as "the top edge of each pane"
+  // rather than its own empty strip (the complaint a plain flat bar drew).
+  const topBarBackground = computed(() => {
+    let x = 0;
+    const stops: string[] = [];
+    const push = (width: number, color: string) => {
+      stops.push(`${color} ${x}px`, `${color} ${x + width}px`);
+      x += width;
+    };
+    if (sidebarVisible.value) {
+      push(sidebarWidth.value, "var(--bg-sidebar)");
+      push(6, "var(--bg-sidebar)");
+    }
+    if (listVisible.value) {
+      push(listWidth.value, "var(--bg-list)");
+      push(6, "var(--bg-list)");
+    }
+    stops.push(`var(--bg-editor) ${x}px`, "var(--bg-editor) 100%");
+    return `linear-gradient(to right, ${stops.join(", ")})`;
+  });
+
   let resizing: "sidebar" | "list" | null = null;
   let startX = 0;
   let startWidth = 0;
@@ -109,6 +132,7 @@ export function usePaneLayout() {
     sidebarVisible,
     listVisible,
     gridTemplateColumns,
+    topBarBackground,
     startResize,
     stepResize,
     bounds,

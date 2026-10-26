@@ -1270,8 +1270,12 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
 .editor {
   height: 100%;
   /* Also a grid item (in App.vue's .app-shell) - see NoteList.vue's
-     .note-list comment for why this needs min-height: 0 too. */
+     .note-list comment for why this needs min-height: 0 too. Needs
+     min-width: 0 for the same reason on the other axis: a grid item's
+     implicit minimum width is otherwise its content's min-content size,
+     which content without a break point (a long URL) could exceed. */
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-editor);
@@ -1629,6 +1633,15 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   line-height: 1.6;
   color: var(--text-primary);
   min-height: 100%;
+  /* Inherited (overflow-wrap cascades), so a single unbroken run with no
+     natural break point - a long URL, a one-token title - wraps instead
+     of running off the pane. break-word (not anywhere): anywhere also
+     changes min-content sizing, which made table cells break ordinary
+     words ("value") that fit fine - minmax(0, 1fr) on the grid track and
+     min-width: 0 on .editor below are what actually keep the pane itself
+     from being forced wide by an unbreakable run; this only needs to
+     wrap a word once its own box is too narrow for it, as a last resort. */
+  overflow-wrap: break-word;
 }
 
 .editor-content :deep(.ProseMirror p.is-editor-empty:first-child::before) {
@@ -1745,11 +1758,29 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   border-radius: 6px;
 }
 
+/* Tiptap's table extension wraps every rendered table in this div
+   specifically so it can scroll independently - see tableWrapper in
+   @tiptap/extension-table. A table narrower than the pane just fills it
+   as before; one that doesn't fit (many columns, or a narrowed pane)
+   scrolls horizontally instead of squeezing columns down past the
+   per-cell min-width below, which is what forced mid-word breaks. */
+.editor-content :deep(.tableWrapper) {
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
 .editor-content :deep(.ProseMirror table) {
   border-collapse: collapse;
-  table-layout: fixed;
+  /* Not table-layout: fixed - Tiptap's own <colgroup><col> elements carry
+     no explicit widths (just a 25px min-width each) unless a column's
+     been manually resized, and fixed layout divides the table's own
+     width evenly across columns without regard to a cell's CSS min-width,
+     so this min-width below had no effect under it. auto layout respects
+     it properly, letting the table genuinely exceed 100% (the wrapper
+     above scrolls) instead of flattening every column to whatever an
+     even 1/N split comes out to. */
   width: 100%;
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 .editor-content :deep(.ProseMirror th),
@@ -1758,6 +1789,7 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   padding: 6px 8px;
   vertical-align: top;
   position: relative;
+  min-width: 120px;
 }
 
 .editor-content :deep(.ProseMirror th) {

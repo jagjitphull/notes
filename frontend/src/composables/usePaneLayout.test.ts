@@ -11,16 +11,16 @@ describe("usePaneLayout", () => {
     const { sidebarCollapsed, listCollapsed, gridTemplateColumns } = usePaneLayout();
     expect(sidebarCollapsed.value).toBe(false);
     expect(listCollapsed.value).toBe(false);
-    expect(gridTemplateColumns.value).toBe("220px 6px 300px 6px 1fr");
+    expect(gridTemplateColumns.value).toBe("220px 6px 300px 6px minmax(0, 1fr)");
   });
 
   it("collapsing a pane zeroes both its column and its resize handle", () => {
     const { sidebarCollapsed, listCollapsed, gridTemplateColumns } = usePaneLayout();
     sidebarCollapsed.value = true;
-    expect(gridTemplateColumns.value).toBe("0px 0px 300px 6px 1fr");
+    expect(gridTemplateColumns.value).toBe("0px 0px 300px 6px minmax(0, 1fr)");
 
     listCollapsed.value = true;
-    expect(gridTemplateColumns.value).toBe("0px 0px 0px 0px 1fr");
+    expect(gridTemplateColumns.value).toBe("0px 0px 0px 0px minmax(0, 1fr)");
   });
 
   it("persists collapsed state so a fresh instance picks it up", async () => {
@@ -64,7 +64,7 @@ describe("usePaneLayout", () => {
     expect(focusMode.value).toBe(true);
     expect(sidebarVisible.value).toBe(false);
     expect(listVisible.value).toBe(false);
-    expect(gridTemplateColumns.value).toBe("0px 0px 0px 0px 1fr");
+    expect(gridTemplateColumns.value).toBe("0px 0px 0px 0px minmax(0, 1fr)");
     // The user's own collapsed preference is untouched by focus mode.
     expect(sidebarCollapsed.value).toBe(false);
     expect(listCollapsed.value).toBe(false);

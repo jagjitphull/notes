@@ -51,7 +51,12 @@ export function usePaneLayout() {
     const sidebarHandle = sidebarVisible.value ? "6px" : "0px";
     const list = listVisible.value ? `${listWidth.value}px` : "0px";
     const listHandle = listVisible.value ? "6px" : "0px";
-    return `${sidebar} ${sidebarHandle} ${list} ${listHandle} 1fr`;
+    // minmax(0, 1fr), not bare 1fr: a grid track's implicit minimum is
+    // auto (its content's min-content size) unless overridden, so a long
+    // unbroken run of text in the editor (a URL, a one-word title) could
+    // otherwise widen this track - and the whole window - past the
+    // available space instead of wrapping within it.
+    return `${sidebar} ${sidebarHandle} ${list} ${listHandle} minmax(0, 1fr)`;
   });
 
   // A hard-stop gradient that continues each pane's own background color

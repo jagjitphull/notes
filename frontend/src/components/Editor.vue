@@ -1,0 +1,1902 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import type { Editor } from "@tiptap/core";
+import { EditorContent, useEditor, VueNodeViewRenderer } from "@tiptap/vue-3";
+import StarterKit from "@tiptap/starter-kit";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import Placeholder from "@tiptap/extension-placeholder";
+import Image from "@tiptap/extension-image";
+import { TableKit } from "@tiptap/extension-table";
+import { CodeBlock } from "@tiptap/extension-code-block";
+import HighlightBase from "@tiptap/extension-highlight";
+import { Markdown } from "tiptap-markdown";
+import markdownItMark from "markdown-it-mark";
+import CodeBlockView from "./CodeBlockView.vue";
+import { MathInline } from "../tiptap/mathInline";
+import Icon from "./icons/Icon.vue";
+import type { IconName } from "./icons/icons";
+import type { Folder, Note, Tag } from "../types";
+import {
+  clearHighlights,
+  findMatches,
+  FindReplace,
+  highlightMatches,
+  replaceAllMatches,
+  replaceMatch,
+  scrollToMatch,
+  type FindMatch,
+} from "../tiptap/findReplace";
+import { exitSuggestion } from "@tiptap/suggestion";
+import type { EditorView } from "@tiptap/pm/view";
+import { extractLinkedTitles, NoteLink } from "../tiptap/noteLink";
+import { FileAttachment } from "../tiptap/fileAttachment";
+import { buildSlashCommandItems, SlashCommand, type SlashCommandItem } from "../tiptap/slashCommand";
+import type { Shape } from "../tiptap/drawingShapes";
+import { currentNoteId } from "../composables/useCurrentNoteId";
+import DrawingCanvas from "./DrawingCanvas.vue";
+import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import {
+  saveAttachment,
+  listNoteVersions,
+  restoreNoteVersion,
+  exportFile,
+  relatedNotes as fetchRelatedNotes,
+  openExternalLink,
+  type NoteVersionInfo,
+} from "../api";
+import { buildExportDocument } from "../export";
+
+// Round-trips through the "==highlighted==" markdown-it-mark convention
+// (same syntax Obsidian and others use), since tiptap-markdown has no
+// built-in spec for this mark and CommonMark has no native highlight syntax.
+const Highlight = HighlightBase.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize: { open: "==", close: "==" },
+        parse: {
+          setup(markdownit: import("markdown-it")) {
+            markdownit.use(markdownItMark);
+          },
+        },
+      },
+    };
+  },
+});
+
+// DrawingCanvas below is a second root node alongside <main> (it teleports
+// its own content elsewhere, but the template still has two top-level
+// children as far as Vue's attrs-fallthrough is concerned), so Vue can't
+// tell which one App.vue's `style="grid-column: 5"` is meant for and drops
+// it silently - bind it onto <main> explicitly instead of relying on that.
+defineOptions({ inheritAttrs: false });
+
+const props = defineProps<{
+  note: Note | null;
+  notes: Note[];
+  folders: Folder[];
+  tags: Tag[];
+  smartSearchSupported: boolean;
+}>();
+
+const emit = defineEmits<{
+  togglePin: [];
+  toggleDeleted: [];
+  addTag: [];
+  removeTag: [name: string];
+  navigateToNote: [id: string];
+}>();
+
+// Other notes this one can link to via [[Title]] - excludes the current
+// note (linking to itself isn't useful), trashed notes (nothing to
+// navigate to), and templates (not "real" notes to link between). Keyed
+// by lowercased title since links resolve by title, not id: renaming a
+// note breaks links elsewhere that pointed at its old title, rather than
+// tracking renames - see tiptap/noteLink.ts.
+const linkTargets = computed(() =>
+  props.notes.filter((n) => !n.deletedAt && !n.isTemplate && n.id !== props.note?.id),
+);
+
+const noteTitleIndex = computed(() => {
+  const map = new Map<string, string>();
+  for (const n of linkTargets.value) {
+    const key = n.title.trim().toLowerCase();
+    if (key && !map.has(key)) map.set(key, n.id);
+  }
+  return map;
+});
+
+const suggestionTitles = computed(() => {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const n of linkTargets.value) {
+    const trimmed = n.title.trim();
+    const key = trimmed.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    titles.push(trimmed);
+  }
+  return titles;
+});
+
+function handleNoteLinkNavigate(title: string) {
+  const id = noteTitleIndex.value.get(title.trim().toLowerCase());
+  if (id) emit("navigateToNote", id);
+}
+
+// "Linked Mentions": the reverse of the forward links above - other notes
+// whose saved body contains a [[This Note's Title]] link. Computed from
+// plaintextContent (already loaded for every note in the list, full body
+// past the title line - see note_file::extract_preview on the Rust side)
+// rather than a fetch per candidate note.
+const backlinks = computed(() => {
+  const title = props.note?.title.trim().toLowerCase();
+  if (!title) return [];
+  return linkTargets.value
+    .filter((n) =>
+      extractLinkedTitles(n.plaintextContent).some((t) => t.toLowerCase() === title),
+    )
+    .map((n) => ({ id: n.id, title: n.title.trim() || t("common.newNote") }));
+});
+
+const noteTags = computed(() =>
+  props.tags
+    .filter((t) => props.note?.tagIds.includes(t.id))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name)),
+);
+
+// Unlike backlinks (derived client-side from data already on hand),
+// finding semantically related notes needs a round trip - it ranks by
+// the same Ollama embeddings Smart Search uses (see store::related_notes
+// on the Rust side), so it's only attempted while that's available.
+const relatedNotes = ref<Note[]>([]);
+
+async function refreshRelatedNotes() {
+  const noteId = props.note?.id;
+  if (!noteId || !props.smartSearchSupported) {
+    relatedNotes.value = [];
+    return;
+  }
+  try {
+    const results = await fetchRelatedNotes(noteId);
+    // The selected note may have changed again while this was in
+    // flight; a stale response arriving late must not clobber it.
+    if (props.note?.id === noteId) relatedNotes.value = results;
+  } catch {
+    relatedNotes.value = [];
+  }
+}
+
+watch(() => [props.note?.id, props.smartSearchSupported], refreshRelatedNotes, { immediate: true });
+
+// Kept in sync for FileAttachmentView.vue's drawing re-edit flow - see
+// useCurrentNoteId.ts for why that can't just read props.note directly.
+watch(() => props.note?.id, (id) => (currentNoteId.value = id ?? null), { immediate: true });
+
+const body = defineModel<string>("body", { default: "" });
+
+const { t } = useI18n();
+
+// "/" menu items - each just deletes the "/query" text Suggestion matched
+// and then runs the same editor command its toolbar-button equivalent
+// does (see toolbarActions below and buildSlashCommandItems's own
+// comment). Kept separate from toolbarActions rather than derived from
+// it: marks (bold, italic, ...) don't belong in a block-insertion menu,
+// and every remaining item's `run` needs the extra deleteRange(range)
+// step toolbarActions has no reason to do.
+const slashCommandItems = computed<SlashCommandItem[]>(() => buildSlashCommandItems(t));
+
+const isDeleted = computed(() => !!props.note?.deletedAt);
+
+const editor = useEditor({
+  content: "",
+  editable: !isDeleted.value,
+  extensions: [
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+      codeBlock: false,
+      // openOnClick: false - a plain click should place the cursor like
+      // any other text, matching the rest of the editor. Opening a link
+      // is a deliberate Cmd/Ctrl+click instead, handled in editorProps.
+      // handleClick below so it can go through the Tauri opener rather
+      // than navigating this app's own webview to an arbitrary URL.
+      link: { openOnClick: false, autolink: true, linkOnPaste: true },
+    }),
+    CodeBlock.extend({
+      addNodeView() {
+        return VueNodeViewRenderer(CodeBlockView);
+      },
+    }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    Placeholder.configure({ placeholder: t("editor.placeholder") }),
+    // Pasted/dropped images are inserted as data: URIs (see handlePaste/
+    // handleDrop below) - @tiptap/extension-image defaults to rejecting
+    // those specifically (allowBase64: false), which doesn't break the
+    // insert itself but silently drops the image the next time the note
+    // is re-parsed from its saved markdown (reopening it, or even just
+    // switching to another note and back).
+    Image.configure({ allowBase64: true }),
+    Highlight,
+    FindReplace,
+    NoteLink.configure({
+      getNoteTitles: () => suggestionTitles.value,
+      isResolved: (title) => noteTitleIndex.value.has(title.trim().toLowerCase()),
+      onNavigate: handleNoteLinkNavigate,
+    }),
+    FileAttachment,
+    MathInline,
+    SlashCommand.configure({ getItems: () => slashCommandItems.value }),
+    TableKit.configure({ table: { resizable: false } }),
+    Markdown.configure({
+      html: false,
+      tightLists: true,
+      linkify: true,
+      // Treat a bare newline as a hard line break (like a plain text editor)
+      // rather than folding it into the surrounding paragraph per strict
+      // CommonMark. This matters for loading notes that predate the rich
+      // editor (or any externally-authored file): without it, a plain
+      // multi-line note collapses into one run-on paragraph the first time
+      // it's opened here.
+      breaks: true,
+    }),
+  ],
+  editorProps: {
+    attributes: {
+      role: "textbox",
+      "aria-multiline": "true",
+      "aria-label": t("editor.contentLabel"),
+      spellcheck: "true",
+    },
+    handleDrop(view, event) {
+      const allFiles = Array.from(event.dataTransfer?.files ?? []);
+      const images = allFiles.filter((f) => f.type.startsWith("image/"));
+      const others = allFiles.filter((f) => !f.type.startsWith("image/"));
+      if (images.length === 0 && others.length === 0) return false;
+      event.preventDefault();
+
+      const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+      for (const file of images) {
+        insertImage(view, file, pos ?? view.state.doc.content.size);
+      }
+      for (const file of others) {
+        insertAttachment(view, file, pos ?? view.state.doc.content.size);
+      }
+      return true;
+    },
+    // A screenshot tool copies image bytes straight to the clipboard
+    // (no file to drag), so pasting needs its own handler - handleDrop
+    // above only ever sees files from a real drag-and-drop.
+    handlePaste(view, event) {
+      // .files first, matching handleDrop above - some WebKit builds
+      // don't populate DataTransferItem.kind/getAsFile() reliably for a
+      // clipboard file, but do populate .files.
+      let files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length === 0) {
+        files = Array.from(event.clipboardData?.items ?? [])
+          .filter((item) => item.kind === "file")
+          .map((item) => item.getAsFile())
+          .filter((f): f is File => f !== null);
+      }
+      if (files.length === 0) return false;
+      event.preventDefault();
+
+      const pos = view.state.selection.from;
+      for (const file of files) {
+        if (file.type.startsWith("image/")) {
+          insertImage(view, file, pos);
+        } else {
+          insertAttachment(view, file, pos);
+        }
+      }
+      return true;
+    },
+    // Opening a link is a deliberate Cmd/Ctrl+click, not a plain click
+    // (which places the cursor like any other text, so the link text
+    // stays editable) - matches the convention most rich-text editors use.
+    handleClick(view, pos, event) {
+      if (!(event.metaKey || event.ctrlKey)) return false;
+      const href = view.state.doc.resolve(pos).marks().find((m) => m.type.name === "link")
+        ?.attrs.href as string | undefined;
+      if (!href) return false;
+      event.preventDefault();
+      openExternalLink(href).catch((e) => console.error("failed to open link", e));
+      return true;
+    },
+  },
+  onUpdate({ editor }) {
+    body.value = editor.storage.markdown.getMarkdown();
+    convertBlobImages(editor);
+    // Keeps hit-highlighting and the match count correct through edits
+    // made while the find bar is open (typing in the note, or a
+    // replace/replace-all this same component just performed).
+    if (findOpen.value) refreshMatches();
+    if (outlineOpen.value) refreshOutline();
+    refreshWordCount();
+  },
+});
+
+// Plain refs refreshed on demand, same reason as `matches`/`outline`
+// above: ProseMirror's doc isn't a reactive Vue value. Reading time uses
+// the common 200-words-per-minute estimate, rounded up to whole minutes
+// (never 0, even for a one-word note).
+const wordCount = ref(0);
+const readingMinutes = ref(1);
+
+function refreshWordCount() {
+  const words = (editor.value?.getText() ?? "").trim().split(/\s+/).filter(Boolean);
+  wordCount.value = words.length;
+  readingMinutes.value = Math.max(1, Math.ceil(words.length / 200));
+}
+
+function insertImage(view: EditorView, file: File, pos: number) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const node = view.state.schema.nodes.image.create({ src: reader.result });
+    const tr = view.state.tr.insert(pos, node);
+    view.dispatch(tr);
+  };
+  reader.readAsDataURL(file);
+}
+
+// Dropped/pasted non-image files (PDFs, documents, ...) are saved to disk
+// under notes_root/.attachments/<note-id>/ (see store::save_attachment)
+// rather than inlined as base64 like images above - attachments can be far
+// larger than a typical pasted screenshot, and inflating a note's own
+// markdown file by the full size of every file it references would defeat
+// the point of keeping notes as small, portable plain-text files.
+async function insertAttachment(view: EditorView, file: File, pos: number) {
+  const noteId = props.note?.id;
+  if (!noteId) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let info: Awaited<ReturnType<typeof saveAttachment>>;
+  try {
+    info = await saveAttachment(noteId, file.name, bytes);
+  } catch (e) {
+    console.error("failed to save attachment", e);
+    return;
+  }
+  // The doc may have changed while the save was in flight (typing,
+  // another drop); clamp so this can't insert past the current end.
+  const insertPos = Math.min(pos, view.state.doc.content.size);
+  const node = view.state.schema.nodes.fileAttachment.create({ path: info.path });
+  const tr = view.state.tr.insert(insertPos, node);
+  view.dispatch(tr);
+}
+
+// Insert Drawing (toolbar) - see DrawingCanvas.vue and
+// FileAttachmentView.vue (which handles re-editing an already-placed
+// one). A drawing saves as a plain fileAttachment node, same `![[path]]`
+// embed as any other attachment; FileAttachmentView just renders a
+// "*.drawing.png" path as an inline image instead of the usual chip.
+const drawingCanvasOpen = ref(false);
+
+function openDrawingCanvas() {
+  drawingCanvasOpen.value = true;
+}
+
+async function onDrawingSave({ png, shapes }: { png: Uint8Array; shapes: Shape[] }) {
+  drawingCanvasOpen.value = false;
+  const noteId = props.note?.id;
+  const view = editor.value?.view;
+  if (!noteId || !view) return;
+  const uuid = crypto.randomUUID();
+  try {
+    const pngInfo = await saveAttachment(noteId, `${uuid}.drawing.png`, png);
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(shapes));
+    await saveAttachment(noteId, `${uuid}.drawing.json`, jsonBytes);
+    const pos = Math.min(view.state.selection.from, view.state.doc.content.size);
+    const node = view.state.schema.nodes.fileAttachment.create({ path: pngInfo.path });
+    view.dispatch(view.state.tr.insert(pos, node));
+  } catch (e) {
+    console.error("failed to save drawing", e);
+  }
+}
+
+// Safety net for pasted images: on at least one WebKitGTK build, a
+// pasted (not dragged) image doesn't reach handlePaste's clipboardData
+// at all - something upstream of it inserts an <img src="blob:...">
+// directly via the platform's own default paste handling. A blob: URL
+// only resolves for this page session, so it silently breaks (shows a
+// broken image) the next time the note is opened. This normalizes any
+// such image, however it got inserted, into a persistent data: URL.
+const blobConversionsInFlight = new Set<string>();
+
+function convertBlobImages(editor: Editor) {
+  editor.state.doc.descendants((node) => {
+    const src = node.attrs.src as string | undefined;
+    if (node.type.name !== "image" || !src?.startsWith("blob:")) return;
+    if (blobConversionsInFlight.has(src)) return;
+    blobConversionsInFlight.add(src);
+
+    fetch(src)
+      .then((res) => res.blob())
+      .then(
+        (blob) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          }),
+      )
+      .then((dataUrl) => {
+        if (editor.isDestroyed) return;
+        editor.state.doc.descendants((n, pos) => {
+          if (n.type.name === "image" && n.attrs.src === src) {
+            editor.view.dispatch(editor.view.state.tr.setNodeAttribute(pos, "src", dataUrl));
+            return false;
+          }
+        });
+      })
+      .catch(() => {
+        // Best-effort: if the blob URL is already gone, there's nothing
+        // left to recover it from.
+      });
+  });
+}
+
+// Sync content into the editor whenever `body` diverges from what the
+// editor itself last produced — i.e. it changed for an external reason
+// (a different note was selected, or its body was freshly fetched). This
+// naturally no-ops on the editor's own onUpdate-triggered writes, and is
+// immune to load-order races since it just compares current values.
+watch(body, (value) => {
+  if (!editor.value) return;
+  if (value !== editor.value.storage.markdown.getMarkdown()) {
+    editor.value.commands.setContent(value, { emitUpdate: false });
+    // A note-linking autocomplete popup left open (e.g. the user switched
+    // notes via the sidebar instead of dismissing it) would otherwise keep
+    // floating over content it no longer applies to.
+    exitSuggestion(editor.value.view);
+    // setContent's emitUpdate: false means onUpdate (and so the word
+    // count it refreshes) doesn't fire for this programmatic change.
+    refreshWordCount();
+  }
+});
+
+watch(isDeleted, (deleted) => {
+  editor.value?.setEditable(!deleted);
+});
+
+onBeforeUnmount(() => {
+  editor.value?.destroy();
+  window.removeEventListener("keydown", onOutlineKeydown);
+  window.removeEventListener("keydown", onHistoryKeydown);
+});
+
+// Deliberately not auto-focused on every note switch: that would steal
+// keyboard focus into the (now-editable) content on every arrow-key list
+// navigation step, breaking "arrow keys to navigate the notes list" after
+// the very first step. The parent calls this explicitly right after
+// creating a note, where jumping straight into typing is exactly wanted.
+async function focusEditor() {
+  await nextTick();
+  editor.value?.commands.focus("end");
+}
+
+const findOpen = ref(false);
+const findQuery = ref("");
+const replaceQuery = ref("");
+const caseSensitive = ref(false);
+const matches = ref<FindMatch[]>([]);
+const currentMatchIndex = ref(-1);
+const findInputRef = ref<HTMLInputElement | null>(null);
+
+function scrollToCurrentMatch() {
+  const e = editor.value;
+  const match = matches.value[currentMatchIndex.value];
+  if (e && match) scrollToMatch(e, match);
+}
+
+// Re-runs the search from scratch: the only path that's correct after the
+// document itself changed (typing, a replace this component just made).
+// Navigation (next/prev) doesn't need this - see setCurrentMatch below.
+function refreshMatches(desiredIndex = currentMatchIndex.value) {
+  const e = editor.value;
+  if (!e) return;
+  matches.value = findMatches(e, findQuery.value, caseSensitive.value);
+  currentMatchIndex.value =
+    matches.value.length === 0 ? -1 : Math.min(Math.max(desiredIndex, 0), matches.value.length - 1);
+  highlightMatches(e, matches.value, currentMatchIndex.value);
+  scrollToCurrentMatch();
+}
+
+function setCurrentMatch(index: number) {
+  const e = editor.value;
+  if (!e || matches.value.length === 0) return;
+  currentMatchIndex.value = ((index % matches.value.length) + matches.value.length) % matches.value.length;
+  highlightMatches(e, matches.value, currentMatchIndex.value);
+  scrollToCurrentMatch();
+}
+
+function goToNextMatch() {
+  setCurrentMatch(currentMatchIndex.value + 1);
+}
+
+function goToPreviousMatch() {
+  setCurrentMatch(currentMatchIndex.value - 1);
+}
+
+async function openFind() {
+  findOpen.value = true;
+  refreshMatches(0);
+  await nextTick();
+  findInputRef.value?.focus();
+  findInputRef.value?.select();
+}
+
+function closeFind({ refocus = true } = {}) {
+  findOpen.value = false;
+  matches.value = [];
+  currentMatchIndex.value = -1;
+  if (editor.value) clearHighlights(editor.value);
+  if (refocus) editor.value?.commands.focus();
+}
+
+function replaceCurrent() {
+  const e = editor.value;
+  const match = matches.value[currentMatchIndex.value];
+  if (!e || !match || isDeleted.value) return;
+  replaceMatch(e, match, replaceQuery.value);
+  // onUpdate refreshes matches/highlights for us (findOpen is true).
+}
+
+function replaceAll() {
+  const e = editor.value;
+  if (!e || matches.value.length === 0 || isDeleted.value) return;
+  replaceAllMatches(e, matches.value, replaceQuery.value);
+}
+
+watch([findQuery, caseSensitive], () => {
+  if (findOpen.value) refreshMatches(0);
+});
+
+// Switching notes leaves findQuery/caseSensitive as-is (reopening Find on
+// the new note keeps the last search term, like a browser's find bar) but
+// drops the match list and highlights, which point at the old note's text.
+interface OutlineHeading {
+  level: number;
+  text: string;
+  pos: number;
+}
+
+const outline = ref<OutlineHeading[]>([]);
+const outlineOpen = ref(false);
+const outlineButtonRef = ref<HTMLButtonElement | null>(null);
+// Teleported to <body> (see template) so it isn't clipped by
+// .app-shell's overflow: hidden - computed from the toggle button's own
+// position since, once teleported, it's no longer a sibling of it.
+const outlinePosition = ref({ top: 0, right: 0 });
+
+// Plain ref refreshed on demand (not a computed) for the same reason as
+// `matches` above: ProseMirror's doc isn't a reactive Vue value, so a
+// computed over it wouldn't update as the user types.
+function refreshOutline() {
+  const e = editor.value;
+  if (!e) {
+    outline.value = [];
+    return;
+  }
+  const headings: OutlineHeading[] = [];
+  e.state.doc.descendants((node, pos) => {
+    if (node.type.name === "heading") {
+      headings.push({ level: node.attrs.level as number, text: node.textContent, pos });
+    }
+  });
+  outline.value = headings;
+}
+
+function jumpToHeading(pos: number) {
+  outlineOpen.value = false;
+  editor.value?.chain().focus().setTextSelection(pos).scrollIntoView().run();
+}
+
+function toggleOutline() {
+  const opening = !outlineOpen.value;
+  // Only one of Outline/History/Export's dropdowns can be open at a time -
+  // each one's own backdrop only catches a click elsewhere in the page, not
+  // on one of its sibling toggle buttons (raised above it so it stays
+  // clickable through that backdrop, see .toolbar-right below), so without
+  // this a click meant to switch straight to this panel would leave
+  // whichever of the others was open still open underneath it too.
+  historyOpen.value = false;
+  exportMenuOpen.value = false;
+  outlineOpen.value = opening;
+  if (outlineOpen.value) {
+    refreshOutline();
+    const rect = outlineButtonRef.value?.getBoundingClientRect();
+    if (rect) {
+      outlinePosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+    }
+  }
+}
+
+function onOutlineKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    outlineOpen.value = false;
+  }
+}
+
+watch(outlineOpen, (open) => {
+  if (open) {
+    window.addEventListener("keydown", onOutlineKeydown);
+  } else {
+    window.removeEventListener("keydown", onOutlineKeydown);
+  }
+});
+
+// A version's listed label combines its relative recency with an
+// absolute timestamp, matching formattedDate's style below.
+interface HistoryEntry extends NoteVersionInfo {
+  label: string;
+}
+
+const historyOpen = ref(false);
+const historyLoading = ref(false);
+const historyVersions = ref<HistoryEntry[]>([]);
+const historyButtonRef = ref<HTMLButtonElement | null>(null);
+const historyPosition = ref({ top: 0, right: 0 });
+
+function formatVersionLabel(timestamp: string): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+async function loadHistory() {
+  const noteId = props.note?.id;
+  if (!noteId) return;
+  historyLoading.value = true;
+  try {
+    const versions = await listNoteVersions(noteId);
+    historyVersions.value = versions.map((v) => ({ ...v, label: formatVersionLabel(v.timestamp) }));
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function toggleHistory() {
+  const opening = !historyOpen.value;
+  outlineOpen.value = false;
+  exportMenuOpen.value = false;
+  historyOpen.value = opening;
+  if (historyOpen.value) {
+    loadHistory();
+    const rect = historyButtonRef.value?.getBoundingClientRect();
+    if (rect) {
+      historyPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+    }
+  }
+}
+
+async function restoreHistoryVersion(version: HistoryEntry) {
+  const noteId = props.note?.id;
+  if (!noteId) return;
+  if (!confirm(t("editor.history.confirmRestore", { time: version.label }))) return;
+  body.value = await restoreNoteVersion(noteId, version.timestamp);
+  historyOpen.value = false;
+}
+
+function onHistoryKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    historyOpen.value = false;
+  }
+}
+
+watch(historyOpen, (open) => {
+  if (open) {
+    window.addEventListener("keydown", onHistoryKeydown);
+  } else {
+    window.removeEventListener("keydown", onHistoryKeydown);
+  }
+});
+
+const exportMenuOpen = ref(false);
+const exportButtonRef = ref<HTMLButtonElement | null>(null);
+const exportPosition = ref({ top: 0, right: 0 });
+
+function toggleExportMenu() {
+  const opening = !exportMenuOpen.value;
+  outlineOpen.value = false;
+  historyOpen.value = false;
+  exportMenuOpen.value = opening;
+  if (exportMenuOpen.value) {
+    const rect = exportButtonRef.value?.getBoundingClientRect();
+    if (rect) exportPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+  }
+}
+
+function sanitizeExportFilename(title: string): string {
+  const cleaned = title.replace(/[/\\:*?"<>|]/g, "-").trim().slice(0, 120);
+  return cleaned || t("editor.export.defaultFilename");
+}
+
+async function exportAsHtml() {
+  exportMenuOpen.value = false;
+  const e = editor.value;
+  if (!e || !props.note) return;
+  const title = props.note.title || t("common.newNote");
+  const html = await buildExportDocument(title, e.getHTML());
+  const path = await saveFileDialog({
+    defaultPath: `${sanitizeExportFilename(title)}.html`,
+    filters: [{ name: "HTML", extensions: ["html"] }],
+  });
+  if (!path) return;
+  await exportFile(path, html);
+}
+
+// Rendered static HTML, fed to the webview's own print dialog via a
+// detached iframe - "Save as PDF" is a destination every OS print dialog
+// offers, so this needs no PDF-rendering code of its own.
+async function exportAsPdf() {
+  exportMenuOpen.value = false;
+  const e = editor.value;
+  if (!e || !props.note) return;
+  const title = props.note.title || t("common.newNote");
+  const html = await buildExportDocument(title, e.getHTML());
+
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.top = "-10000px";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    setTimeout(() => iframe.remove(), 1000);
+  };
+  iframe.srcdoc = html;
+  document.body.appendChild(iframe);
+}
+
+const linkPopoverOpen = ref(false);
+const linkUrlInput = ref("");
+const linkButtonRef = ref<HTMLButtonElement | null>(null);
+const linkInputRef = ref<HTMLInputElement | null>(null);
+const linkPopoverPosition = ref({ top: 0, right: 0 });
+
+// Whether the current selection/cursor is already inside a link - the
+// popover pre-fills its URL (for editing) and offers "Remove Link" only
+// in that case, same as most rich-text editors' link tools.
+function currentLinkHref(): string | null {
+  const href = editor.value?.getAttributes("link").href;
+  return typeof href === "string" ? href : null;
+}
+
+async function toggleLinkPopover() {
+  if (linkPopoverOpen.value) {
+    linkPopoverOpen.value = false;
+    return;
+  }
+  linkUrlInput.value = currentLinkHref() ?? "";
+  linkPopoverOpen.value = true;
+  const rect = linkButtonRef.value?.getBoundingClientRect();
+  if (rect) linkPopoverPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+  await nextTick();
+  linkInputRef.value?.focus();
+  linkInputRef.value?.select();
+}
+
+function closeLinkPopover() {
+  linkPopoverOpen.value = false;
+  editor.value?.commands.focus();
+}
+
+function applyLink() {
+  const e = editor.value;
+  const url = linkUrlInput.value.trim();
+  if (!e || !url) return;
+  // A bare "example.com" is still a reasonable thing to type - this is
+  // what makes it a clickable, openable link rather than inert text
+  // (open_external_link on the Rust side only accepts http(s)/mailto, so
+  // this doesn't widen what a click can actually do).
+  const href = /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`;
+  const chain = e.chain().focus();
+  if (e.state.selection.empty) {
+    chain.insertContent({ type: "text", marks: [{ type: "link", attrs: { href } }], text: href }).run();
+  } else {
+    chain.extendMarkRange("link").setLink({ href }).run();
+  }
+  closeLinkPopover();
+}
+
+function removeLink() {
+  editor.value?.chain().focus().extendMarkRange("link").unsetLink().run();
+  closeLinkPopover();
+}
+
+watch(
+  () => props.note?.id,
+  () => {
+    if (findOpen.value) closeFind({ refocus: false });
+    outlineOpen.value = false;
+    historyOpen.value = false;
+    exportMenuOpen.value = false;
+    linkPopoverOpen.value = false;
+  },
+);
+
+const matchCountLabel = computed(() => {
+  if (!findQuery.value) return "";
+  if (matches.value.length === 0) return t("editor.find.noResults");
+  return t("editor.find.matchCount", {
+    current: currentMatchIndex.value + 1,
+    total: matches.value.length,
+  });
+});
+
+defineExpose({ focusEditor, openFind });
+
+const folderName = computed(
+  () => props.folders.find((f) => f.id === props.note?.folderId)?.name ?? "",
+);
+
+const formattedDate = computed(() => {
+  if (!props.note) return "";
+  return new Date(props.note.updatedAt).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+});
+
+const wordCountLabel = computed(() => {
+  const words =
+    wordCount.value === 1
+      ? t("editor.wordCount.oneWord")
+      : t("editor.wordCount.words", { count: wordCount.value });
+  return `${words} · ${t("editor.wordCount.readingTime", { minutes: readingMinutes.value })}`;
+});
+
+type ToolbarAction = {
+  label: string;
+  icon: IconName;
+  isActive: () => boolean;
+  run: () => void;
+};
+
+const toolbarActions = computed<ToolbarAction[]>(() => {
+  const e = editor.value;
+  if (!e) return [];
+  const chain = () => e.chain().focus();
+  return [
+    { label: t("editor.toolbar.bold"), icon: "bold", isActive: () => e.isActive("bold"), run: () => chain().toggleBold().run() },
+    { label: t("editor.toolbar.italic"), icon: "italic", isActive: () => e.isActive("italic"), run: () => chain().toggleItalic().run() },
+    { label: t("editor.toolbar.underline"), icon: "underline", isActive: () => e.isActive("underline"), run: () => chain().toggleUnderline().run() },
+    { label: t("editor.toolbar.strikethrough"), icon: "strikethrough", isActive: () => e.isActive("strike"), run: () => chain().toggleStrike().run() },
+    { label: t("editor.toolbar.highlight"), icon: "highlight", isActive: () => e.isActive("highlight"), run: () => chain().toggleHighlight().run() },
+    { label: t("editor.toolbar.heading1"), icon: "heading1", isActive: () => e.isActive("heading", { level: 1 }), run: () => chain().toggleHeading({ level: 1 }).run() },
+    { label: t("editor.toolbar.heading2"), icon: "heading2", isActive: () => e.isActive("heading", { level: 2 }), run: () => chain().toggleHeading({ level: 2 }).run() },
+    { label: t("editor.toolbar.checklist"), icon: "checklist", isActive: () => e.isActive("taskList"), run: () => chain().toggleTaskList().run() },
+    { label: t("editor.toolbar.bulletList"), icon: "bulletList", isActive: () => e.isActive("bulletList"), run: () => chain().toggleBulletList().run() },
+    { label: t("editor.toolbar.numberedList"), icon: "numberedList", isActive: () => e.isActive("orderedList"), run: () => chain().toggleOrderedList().run() },
+    { label: t("editor.toolbar.codeBlock"), icon: "code", isActive: () => e.isActive("codeBlock"), run: () => chain().toggleCodeBlock().run() },
+    { label: t("editor.toolbar.quote"), icon: "quote", isActive: () => e.isActive("blockquote"), run: () => chain().toggleBlockquote().run() },
+    {
+      label: t("editor.toolbar.insertTable"),
+      icon: "table",
+      isActive: () => e.isActive("table"),
+      run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    },
+    {
+      label: t("editor.toolbar.insertMath"),
+      icon: "math",
+      isActive: () => false,
+      // Inline math round-trips through plain "$latex$" text (see
+      // tiptap/mathInline.ts) rather than inserting a live node directly,
+      // the same deliberate choice as [[note links]]: it becomes a
+      // rendered node on next parse, not while still mid-edit, so it
+      // can't collide with the user still typing the expression itself.
+      run: () => {
+        const { from } = e.state.selection;
+        chain()
+          .insertContent("$$")
+          .setTextSelection(from + 1)
+          .run();
+      },
+    },
+    {
+      label: t("editor.toolbar.insertMermaid"),
+      icon: "diagram",
+      isActive: () => e.isActive("codeBlock", { language: "mermaid" }),
+      run: () =>
+        chain()
+          .insertContent({
+            type: "codeBlock",
+            attrs: { language: "mermaid" },
+            content: [{ type: "text", text: "graph TD\n    A --> B" }],
+          })
+          .run(),
+    },
+    {
+      label: t("editor.toolbar.insertDrawing"),
+      icon: "pencil",
+      isActive: () => false,
+      run: () => openDrawingCanvas(),
+    },
+  ];
+});
+
+// Row/column editing only makes sense with the cursor inside a table, so
+// these are a separate, conditionally-shown group rather than always-on
+// buttons that would mostly just error or no-op.
+const tableEditActions = computed<ToolbarAction[]>(() => {
+  const e = editor.value;
+  if (!e || !e.isActive("table")) return [];
+  const chain = () => e.chain().focus();
+  return [
+    { label: t("editor.toolbar.addRow"), icon: "tableRowPlus", isActive: () => false, run: () => chain().addRowAfter().run() },
+    { label: t("editor.toolbar.deleteRow"), icon: "tableRowMinus", isActive: () => false, run: () => chain().deleteRow().run() },
+    { label: t("editor.toolbar.addColumn"), icon: "tableColumnPlus", isActive: () => false, run: () => chain().addColumnAfter().run() },
+    { label: t("editor.toolbar.deleteColumn"), icon: "tableColumnMinus", isActive: () => false, run: () => chain().deleteColumn().run() },
+    { label: t("editor.toolbar.deleteTable"), icon: "trash", isActive: () => false, run: () => chain().deleteTable().run() },
+  ];
+});
+</script>
+
+<template>
+  <main class="editor" v-bind="$attrs">
+    <template v-if="note">
+      <div class="editor-toolbar">
+        <div class="format-bar">
+          <button
+            v-for="action in toolbarActions"
+            :key="action.label"
+            class="format-button"
+            :class="{ active: action.isActive() }"
+            :title="action.label"
+            :aria-label="action.label"
+            :aria-pressed="action.isActive()"
+            :disabled="isDeleted"
+            @click="action.run"
+          >
+            <Icon :name="action.icon" />
+          </button>
+          <button
+            ref="linkButtonRef"
+            class="format-button"
+            :class="{ active: editor?.isActive('link') || linkPopoverOpen }"
+            :title="t('editor.toolbar.link')"
+            :aria-label="t('editor.toolbar.link')"
+            :aria-pressed="linkPopoverOpen"
+            :disabled="isDeleted"
+            @click="toggleLinkPopover"
+          >
+            <Icon name="link" />
+          </button>
+        </div>
+        <Teleport to="body">
+          <div v-if="linkPopoverOpen" class="outline-backdrop" @click="closeLinkPopover" />
+          <form
+            v-if="linkPopoverOpen"
+            class="link-popover"
+            :style="{ top: `${linkPopoverPosition.top}px`, right: `${linkPopoverPosition.right}px` }"
+            @submit.prevent="applyLink"
+          >
+            <input
+              ref="linkInputRef"
+              v-model="linkUrlInput"
+              type="text"
+              class="find-input"
+              :placeholder="t('editor.toolbar.linkUrlPlaceholder')"
+              @keydown.escape.prevent="closeLinkPopover"
+            />
+            <button
+              type="button"
+              v-if="currentLinkHref()"
+              class="find-text-button"
+              @click="removeLink"
+            >
+              {{ t('editor.toolbar.linkRemove') }}
+            </button>
+            <button type="submit" class="find-text-button" :disabled="!linkUrlInput.trim()">
+              {{ t('editor.toolbar.linkApply') }}
+            </button>
+          </form>
+        </Teleport>
+        <div class="toolbar-right">
+          <span class="editor-meta">
+            {{ formattedDate }} &middot; {{ folderName }} &middot; {{ wordCountLabel }}
+          </span>
+          <button
+            ref="outlineButtonRef"
+            class="icon-button"
+            :class="{ active: outlineOpen }"
+            :title="t('editor.outline.title')"
+            :aria-label="t('editor.outline.title')"
+            :aria-pressed="outlineOpen"
+            @click="toggleOutline"
+          >
+            <Icon name="outline" />
+          </button>
+          <Teleport to="body">
+            <div v-if="outlineOpen" class="outline-backdrop" @click="outlineOpen = false" />
+            <div
+              v-if="outlineOpen"
+              class="outline-dropdown"
+              role="menu"
+              :style="{ top: `${outlinePosition.top}px`, right: `${outlinePosition.right}px` }"
+            >
+              <p v-if="outline.length === 0" class="outline-empty">
+                {{ t('editor.outline.empty') }}
+              </p>
+              <button
+                v-for="(heading, index) in outline"
+                :key="index"
+                class="outline-item"
+                :class="`outline-level-${heading.level}`"
+                role="menuitem"
+                @click="jumpToHeading(heading.pos)"
+              >
+                {{ heading.text || t('common.newNote') }}
+              </button>
+            </div>
+          </Teleport>
+          <button
+            ref="historyButtonRef"
+            class="icon-button"
+            :class="{ active: historyOpen }"
+            :title="t('editor.history.title')"
+            :aria-label="t('editor.history.title')"
+            :aria-pressed="historyOpen"
+            @click="toggleHistory"
+          >
+            <Icon name="history" />
+          </button>
+          <Teleport to="body">
+            <div v-if="historyOpen" class="outline-backdrop" @click="historyOpen = false" />
+            <div
+              v-if="historyOpen"
+              class="outline-dropdown"
+              role="menu"
+              :style="{ top: `${historyPosition.top}px`, right: `${historyPosition.right}px` }"
+            >
+              <p v-if="!historyLoading && historyVersions.length === 0" class="outline-empty">
+                {{ t('editor.history.empty') }}
+              </p>
+              <button
+                v-for="version in historyVersions"
+                :key="version.timestamp"
+                class="outline-item history-item"
+                role="menuitem"
+                :title="t('editor.history.restore')"
+                @click="restoreHistoryVersion(version)"
+              >
+                <span class="history-time">{{ version.label }}</span>
+                <span class="history-preview">{{ version.preview || t('common.newNote') }}</span>
+              </button>
+            </div>
+          </Teleport>
+          <button
+            ref="exportButtonRef"
+            class="icon-button"
+            :class="{ active: exportMenuOpen }"
+            :title="t('editor.export.button')"
+            :aria-label="t('editor.export.button')"
+            :aria-pressed="exportMenuOpen"
+            @click="toggleExportMenu"
+          >
+            <Icon name="download" />
+          </button>
+          <Teleport to="body">
+            <div v-if="exportMenuOpen" class="outline-backdrop" @click="exportMenuOpen = false" />
+            <div
+              v-if="exportMenuOpen"
+              class="outline-dropdown"
+              role="menu"
+              :style="{ top: `${exportPosition.top}px`, right: `${exportPosition.right}px` }"
+            >
+              <button class="outline-item" role="menuitem" @click="exportAsHtml">
+                {{ t('editor.export.html') }}
+              </button>
+              <button class="outline-item" role="menuitem" @click="exportAsPdf">
+                {{ t('editor.export.pdf') }}
+              </button>
+            </div>
+          </Teleport>
+          <button
+            class="icon-button"
+            :class="{ active: findOpen }"
+            :title="t('editor.find.openFind')"
+            :aria-label="t('editor.find.openFind')"
+            :aria-pressed="findOpen"
+            @click="findOpen ? closeFind() : openFind()"
+          >
+            <Icon name="search" />
+          </button>
+          <button
+            class="icon-button"
+            :class="{ active: note.isPinned }"
+            :title="note.isPinned ? t('common.unpin') : t('common.pin')"
+            :aria-label="note.isPinned ? t('common.unpin') : t('common.pin')"
+            :aria-pressed="note.isPinned"
+            :disabled="isDeleted"
+            @click="emit('togglePin')"
+          >
+            <Icon name="pin" />
+          </button>
+          <button
+            class="icon-button"
+            :title="isDeleted ? t('common.restore') : t('common.delete')"
+            :aria-label="isDeleted ? t('common.restore') : t('common.delete')"
+            @click="emit('toggleDeleted')"
+          >
+            <Icon :name="isDeleted ? 'restore' : 'trash'" />
+          </button>
+        </div>
+      </div>
+
+      <div v-if="tableEditActions.length > 0" class="format-bar table-edit-bar">
+        <button
+          v-for="action in tableEditActions"
+          :key="action.label"
+          class="format-button"
+          :title="action.label"
+          :aria-label="action.label"
+          :disabled="isDeleted"
+          @click="action.run"
+        >
+          <Icon :name="action.icon" />
+        </button>
+      </div>
+
+      <div v-if="findOpen" class="find-bar" role="search" :aria-label="t('editor.find.openFind')">
+        <input
+          ref="findInputRef"
+          v-model="findQuery"
+          type="text"
+          class="find-input"
+          :placeholder="t('editor.find.findPlaceholder')"
+          @keydown.enter.exact.prevent="goToNextMatch"
+          @keydown.enter.shift.exact.prevent="goToPreviousMatch"
+          @keydown.escape.prevent="closeFind()"
+        />
+        <span class="find-count">{{ matchCountLabel }}</span>
+        <button
+          class="icon-button"
+          :disabled="matches.length === 0"
+          :title="t('editor.find.previous')"
+          :aria-label="t('editor.find.previous')"
+          @click="goToPreviousMatch"
+        >
+          <Icon name="chevronUp" />
+        </button>
+        <button
+          class="icon-button"
+          :disabled="matches.length === 0"
+          :title="t('editor.find.next')"
+          :aria-label="t('editor.find.next')"
+          @click="goToNextMatch"
+        >
+          <Icon name="chevronDown" />
+        </button>
+        <button
+          class="find-case-toggle"
+          :class="{ active: caseSensitive }"
+          type="button"
+          :title="t('editor.find.caseSensitive')"
+          :aria-label="t('editor.find.caseSensitive')"
+          :aria-pressed="caseSensitive"
+          @click="caseSensitive = !caseSensitive"
+        >
+          Aa
+        </button>
+        <input
+          v-model="replaceQuery"
+          type="text"
+          class="find-input"
+          :disabled="isDeleted"
+          :placeholder="t('editor.find.replacePlaceholder')"
+          @keydown.enter.exact.prevent="replaceCurrent"
+          @keydown.escape.prevent="closeFind()"
+        />
+        <button
+          class="find-text-button"
+          :disabled="matches.length === 0 || isDeleted"
+          @click="replaceCurrent"
+        >
+          {{ t('editor.find.replace') }}
+        </button>
+        <button
+          class="find-text-button"
+          :disabled="matches.length === 0 || isDeleted"
+          @click="replaceAll"
+        >
+          {{ t('editor.find.replaceAll') }}
+        </button>
+        <button
+          class="icon-button"
+          :title="t('common.close')"
+          :aria-label="t('common.close')"
+          @click="closeFind()"
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+
+      <div v-if="!isDeleted" class="tags-row">
+        <span
+          v-for="tag in noteTags"
+          :key="tag.id"
+          class="tag-chip"
+          :style="tag.color ? { color: tag.color } : undefined"
+        >
+          #{{ tag.name }}
+          <button
+            class="tag-remove"
+            :title="t('editor.removeTag')"
+            :aria-label="t('editor.removeTagLabel', { name: tag.name })"
+            @click="emit('removeTag', tag.name)"
+          >
+            &times;
+          </button>
+        </span>
+        <button class="add-tag-button" :title="t('editor.addTag')" @click="emit('addTag')">
+          {{ t('editor.addTagButton') }}
+        </button>
+      </div>
+
+      <p v-if="note.isTemplate" class="template-hint">{{ t('editor.templateHint') }}</p>
+
+      <div class="editor-canvas">
+        <EditorContent :editor="editor" class="editor-content" />
+
+        <div v-if="backlinks.length > 0" class="backlinks">
+          <h3 class="backlinks-title">{{ t('editor.backlinks.title') }}</h3>
+          <ul class="backlinks-list">
+            <li v-for="link in backlinks" :key="link.id">
+              <button class="backlink-item" @click="emit('navigateToNote', link.id)">
+                <Icon name="document" />
+                <span>{{ link.title }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="relatedNotes.length > 0" class="backlinks">
+          <h3 class="backlinks-title">{{ t('editor.relatedNotes.title') }}</h3>
+          <ul class="backlinks-list">
+            <li v-for="related in relatedNotes" :key="related.id">
+              <button class="backlink-item" @click="emit('navigateToNote', related.id)">
+                <Icon name="sparkle" />
+                <span>{{ related.title || t('common.newNote') }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </template>
+
+    <div v-else class="empty-editor">
+      <Icon name="document" />
+      <p>{{ t('editor.emptyState') }}</p>
+    </div>
+  </main>
+
+  <DrawingCanvas v-if="drawingCanvasOpen" @save="onDrawingSave" @cancel="drawingCanvasOpen = false" />
+</template>
+
+<style scoped>
+.editor {
+  height: 100%;
+  /* Also a grid item (in App.vue's .app-shell) - see NoteList.vue's
+     .note-list comment for why this needs min-height: 0 too. Needs
+     min-width: 0 for the same reason on the other axis: a grid item's
+     implicit minimum width is otherwise its content's min-content size,
+     which content without a break point (a long URL) could exceed. */
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-editor);
+}
+
+.editor-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  /* flex-start, not center: .format-bar is the one group that wraps
+     internally onto a second line when space is tight (below), and
+     center-aligning against its full wrapped height would scatter the
+     other groups' single line across both of its lines instead of
+     pinning them to the top. */
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.table-edit-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.format-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.format-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.format-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.format-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.format-button.active {
+  background: var(--bg-selected);
+  color: var(--accent-blue-text);
+}
+
+.format-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  /* Above .outline-backdrop (z-index 1000, below): each of Outline/History/
+     Export's own backdrop is a transparent position: fixed; inset: 0 click
+     catcher teleported to <body>, so with these buttons at the same
+     (implicit, unset) stacking level a click meant to switch straight from
+     one open panel to another instead landed on the first panel's backdrop
+     and only closed it - a second click on the same button was needed to
+     actually open the one the user wanted. Raising this above the backdrop
+     keeps the buttons themselves clickable through it. */
+  position: relative;
+  z-index: 1002;
+}
+
+.editor-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.outline-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.outline-dropdown {
+  position: fixed;
+  z-index: 1001;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-list);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 4px;
+}
+
+.link-popover {
+  position: fixed;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 320px;
+  background: var(--bg-list);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+}
+
+.link-popover .find-input {
+  flex: 1 1 auto;
+}
+
+.outline-empty {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-item:hover {
+  background: var(--bg-hover);
+}
+
+.outline-level-1 {
+  font-weight: 600;
+}
+
+.outline-level-2 {
+  padding-left: 22px;
+}
+
+.outline-level-3 {
+  padding-left: 34px;
+  color: var(--text-secondary);
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+
+.history-time {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.history-preview {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.find-input {
+  flex: 1 1 120px;
+  min-width: 90px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.find-input:disabled {
+  opacity: 0.5;
+}
+
+.find-input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -1px;
+}
+
+.find-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  min-width: 56px;
+  text-align: center;
+}
+
+.find-case-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.find-case-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.find-case-toggle.active {
+  background: var(--bg-selected);
+  color: var(--accent-blue-text);
+}
+
+.find-text-button {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.find-text-button:hover:not(:disabled) {
+  background: var(--bg-selected);
+}
+
+.find-text-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tags-row {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 48px 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.template-hint {
+  flex: 0 0 auto;
+  margin: 8px 48px 0;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 12px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-remove:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.add-tag-button {
+  padding: 3px 9px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.add-tag-button:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue-text);
+}
+
+.editor-canvas {
+  flex: 1 1 auto;
+  /* Flex items default to min-height: auto (content-based), which
+     overrides flex-shrink and defeats overflow-y: auto - a long note
+     would just grow the box instead of scrolling within it. */
+  min-height: 0;
+  overflow-y: auto;
+  /* No max-width/centering: a capped column (even a generous one) still
+     reads as wasted space once the pane is wide, per direct feedback.
+     Content now spans the same width as the toolbar above it - just this
+     padding on either side, at any pane width. */
+  padding: 16px 48px 48px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.editor-content :deep(.ProseMirror) {
+  outline: none;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  min-height: 100%;
+  /* Inherited (overflow-wrap cascades), so a single unbroken run with no
+     natural break point - a long URL, a one-token title - wraps instead
+     of running off the pane. break-word (not anywhere): anywhere also
+     changes min-content sizing, which made table cells break ordinary
+     words ("value") that fit fine - minmax(0, 1fr) on the grid track and
+     min-width: 0 on .editor below are what actually keep the pane itself
+     from being forced wide by an unbreakable run; this only needs to
+     wrap a word once its own box is too narrow for it, as a last resort. */
+  overflow-wrap: break-word;
+}
+
+.editor-content :deep(.ProseMirror p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  height: 0;
+}
+
+.editor-content :deep(.ProseMirror > *:first-child) {
+  margin-top: 0;
+}
+
+/* Only the visual first line reads as a title, matching Apple Notes —
+   even when hard breaks (see the `breaks` Markdown option) put more than
+   one line inside that first block. */
+.editor-content :deep(.ProseMirror > *:first-child::first-line) {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.editor-content :deep(.ProseMirror h1) {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 18px 0 6px;
+}
+
+.editor-content :deep(.ProseMirror h2) {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 16px 0 6px;
+}
+
+.editor-content :deep(.ProseMirror p) {
+  margin: 0 0 8px;
+}
+
+.editor-content :deep(.ProseMirror ul),
+.editor-content :deep(.ProseMirror ol) {
+  padding-left: 22px;
+  margin: 0 0 8px;
+}
+
+.editor-content :deep(.ProseMirror ul[data-type="taskList"]) {
+  list-style: none;
+  padding-left: 4px;
+}
+
+.editor-content :deep(.ProseMirror ul[data-type="taskList"] li) {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.editor-content :deep(.ProseMirror ul[data-type="taskList"] li > label) {
+  margin-top: 3px;
+}
+
+.editor-content :deep(.ProseMirror blockquote) {
+  border-left: 3px solid var(--border);
+  margin: 0 0 8px;
+  padding-left: 12px;
+  color: var(--text-secondary);
+}
+
+.editor-content :deep(.ProseMirror pre) {
+  background: var(--bg-hover);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0 0 8px;
+  overflow-x: auto;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+}
+
+.editor-content :deep(.ProseMirror code) {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.9em;
+}
+
+.editor-content :deep(.ProseMirror pre code) {
+  background: none;
+  padding: 0;
+}
+
+.editor-content :deep(.ProseMirror mark) {
+  background: var(--accent-yellow);
+  /* Not `inherit`: in dark mode that puts near-white body text on a
+     similarly light yellow highlight (~1.2:1 contrast, unreadable).
+     The highlight background needs dark text in both themes. */
+  color: #1c1c1e;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Find results: pale yellow for every hit, a stronger orange ring on
+   whichever one is "current" - same convention browsers use for their
+   own in-page find, and visually distinct from the ==highlight== mark
+   above despite the shared yellow family. */
+.editor-content :deep(.find-match) {
+  background: rgba(242, 183, 5, 0.35);
+  border-radius: 2px;
+}
+
+.editor-content :deep(.find-match-current) {
+  background: rgba(255, 149, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 149, 0, 0.9);
+  border-radius: 2px;
+}
+
+.editor-content :deep(.ProseMirror img) {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* Tiptap's table extension wraps every rendered table in this div
+   specifically so it can scroll independently - see tableWrapper in
+   @tiptap/extension-table. A table narrower than the pane just fills it
+   as before; one that doesn't fit (many columns, or a narrowed pane)
+   scrolls horizontally instead of squeezing columns down past the
+   per-cell min-width below, which is what forced mid-word breaks. */
+.editor-content :deep(.tableWrapper) {
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
+.editor-content :deep(.ProseMirror table) {
+  border-collapse: collapse;
+  /* Not table-layout: fixed - Tiptap's own <colgroup><col> elements carry
+     no explicit widths (just a 25px min-width each) unless a column's
+     been manually resized, and fixed layout divides the table's own
+     width evenly across columns without regard to a cell's CSS min-width,
+     so this min-width below had no effect under it. auto layout respects
+     it properly, letting the table genuinely exceed 100% (the wrapper
+     above scrolls) instead of flattening every column to whatever an
+     even 1/N split comes out to. */
+  width: 100%;
+  margin: 0;
+}
+
+.editor-content :deep(.ProseMirror th),
+.editor-content :deep(.ProseMirror td) {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  vertical-align: top;
+  position: relative;
+  min-width: 120px;
+}
+
+.editor-content :deep(.ProseMirror th) {
+  background: var(--bg-hover);
+  font-weight: 600;
+  text-align: left;
+}
+
+.editor-content :deep(.ProseMirror td > p),
+.editor-content :deep(.ProseMirror th > p) {
+  margin: 0;
+}
+
+.editor-content :deep(.ProseMirror .selectedCell) {
+  background: var(--bg-selected);
+}
+
+.backlinks {
+  margin-top: 32px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.backlinks-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  margin: 0 0 4px;
+}
+
+.backlinks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.backlink-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.backlink-item:hover {
+  background: var(--bg-hover);
+}
+
+.backlink-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  flex: 0 0 auto;
+}
+
+.empty-editor {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-tertiary);
+}
+
+.empty-editor svg {
+  width: 48px;
+  height: 48px;
+}
+
+.empty-editor p {
+  font-size: 14px;
+  margin: 0;
+}
+</style>

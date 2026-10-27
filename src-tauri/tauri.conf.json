@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "notes",
+  "productName": "Notes",
   "version": "0.1.0",
   "identifier": "dev.jagjitphull.notes",
   "build": {
@@ -15,19 +15,29 @@
         "title": "Notes",
         "width": 1200,
         "height": 800,
-        "minWidth": 760,
-        "minHeight": 480,
+        "minWidth": 900,
+        "minHeight": 560,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": true
       }
     ],
     "security": {
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/jagjitphull/notes/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc3RjQ3RTNBN0EwOTdDNjgKUldSb2ZBbDZPbjcwZDFDTXVrSGxydGMxNnN5SGdQQXJwMW9MZEprU21GUkNQeHVIdHgxQmRXS1MK"
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,6 +45,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "category": "Productivity",
+    "shortDescription": "A minimalist, local-first notes app",
+    "longDescription": "A minimalist, local-first note-taking app for Linux, Windows, and macOS with the speed and feel of Apple Notes. Notes are stored as plain Markdown files in a folder you choose, so they can sync across machines via Dropbox, pCloud, or any synced folder, with instant full-text search backed by SQLite FTS5.",
+    "homepage": "https://github.com/jagjitphull/notes",
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

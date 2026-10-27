@@ -1,0 +1,46 @@
+name: notes
+version: '0.1.0'
+summary: A minimalist, local-first notes app
+description: |
+  A minimalist, local-first note-taking app for Linux with the speed and
+  feel of Apple Notes. Notes are stored as plain Markdown files in a
+  folder you choose, so they can sync across machines via Dropbox,
+  pCloud, or any synced folder, with instant full-text search backed by
+  SQLite FTS5.
+grade: stable
+confinement: strict
+base: core22
+license: MIT
+
+apps:
+  notes:
+    command: bin/notes
+    extensions: [gnome]
+    plugs:
+      # Smart Search talks to a local Ollama server and the updater
+      # checks GitHub Releases - both plain outbound HTTP(S).
+      - network
+      # The notes root is a user-chosen folder, often a cloud-sync
+      # directory (Dropbox, pCloud, ...) rather than anything
+      # portal-aware, so this needs broad home access.
+      - home
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - opengl
+
+parts:
+  notes:
+    # Building Rust/Node from source is what the CI release build
+    # already does for the .deb/AppImage targets; this part packages
+    # that same output binary rather than duplicating the build here.
+    plugin: nil
+    source: ..
+    source-type: local
+    override-build: |
+      install -Dm755 src-tauri/target/release/notes "$SNAPCRAFT_PART_INSTALL/bin/notes"
+      install -Dm644 src-tauri/icons/128x128.png "$SNAPCRAFT_PART_INSTALL/share/icons/hicolor/128x128/apps/notes.png"
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libayatana-appindicator3-1

@@ -131,6 +131,7 @@ const promptModal = ref<{
   title: string;
   initialValue: string;
   confirmLabel: string;
+  validate?: (value: string) => string | null;
   onConfirm: (value: string) => void;
 } | null>(null);
 const commandPaletteOpen = ref(false);
@@ -869,11 +870,25 @@ function onSortClick(event: MouseEvent) {
   contextMenu.value = { x: event.clientX, y: event.clientY, items };
 }
 
+// The sidebar's FOLDERS list is flat - it shows every folder (including the
+// unrenameable root entry, id "") with no indentation or grouping by parent,
+// so two folders anywhere in the vault sharing a name are genuinely
+// indistinguishable there, not just within one parent. Checked case- and
+// whitespace-insensitively since that's still a collision to the eye.
+function duplicateFolderNameError(name: string, excludeId?: string): string | null {
+  const normalized = name.trim().toLowerCase();
+  const collides = folders.value.some(
+    (f) => f.id !== excludeId && f.name.trim().toLowerCase() === normalized,
+  );
+  return collides ? t("promptModal.duplicateFolderName", { name: name.trim() }) : null;
+}
+
 function promptNewFolder(parentId: string) {
   promptModal.value = {
     title: t("promptModal.newFolderTitle"),
     initialValue: "",
     confirmLabel: t("common.create"),
+    validate: (name) => duplicateFolderNameError(name),
     onConfirm: async (name) => {
       const id = await createFolder(parentId, name);
       await refreshData();
@@ -888,6 +903,7 @@ function promptRenameFolder(folder: Folder) {
     title: t("promptModal.renameFolderTitle"),
     initialValue: folder.name,
     confirmLabel: t("common.rename"),
+    validate: (name) => duplicateFolderNameError(name, folder.id),
     onConfirm: async (name) => {
       const newId = await renameFolder(folder.id, name);
       if (selectedId.value === folder.id) selectedId.value = newId;
@@ -1143,6 +1159,7 @@ onUnmounted(() => window.removeEventListener("keydown", onGlobalKeydown));
       :title="promptModal.title"
       :initial-value="promptModal.initialValue"
       :confirm-label="promptModal.confirmLabel"
+      :validate="promptModal.validate"
       @confirm="promptModal.onConfirm"
       @cancel="promptModal = null"
     />

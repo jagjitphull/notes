@@ -248,7 +248,8 @@
   "promptModal": {
     "addTagTitle": "Add Tag",
     "newFolderTitle": "New Folder",
-    "renameFolderTitle": "Rename Folder"
+    "renameFolderTitle": "Rename Folder",
+    "duplicateFolderName": "A folder named \"{name}\" already exists"
   },
   "commandPalette": {
     "title": "Command Palette",

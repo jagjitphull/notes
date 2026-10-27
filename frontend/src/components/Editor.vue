@@ -596,7 +596,16 @@ function jumpToHeading(pos: number) {
 }
 
 function toggleOutline() {
-  outlineOpen.value = !outlineOpen.value;
+  const opening = !outlineOpen.value;
+  // Only one of Outline/History/Export's dropdowns can be open at a time -
+  // each one's own backdrop only catches a click elsewhere in the page, not
+  // on one of its sibling toggle buttons (raised above it so it stays
+  // clickable through that backdrop, see .toolbar-right below), so without
+  // this a click meant to switch straight to this panel would leave
+  // whichever of the others was open still open underneath it too.
+  historyOpen.value = false;
+  exportMenuOpen.value = false;
+  outlineOpen.value = opening;
   if (outlineOpen.value) {
     refreshOutline();
     const rect = outlineButtonRef.value?.getBoundingClientRect();
@@ -653,7 +662,10 @@ async function loadHistory() {
 }
 
 function toggleHistory() {
-  historyOpen.value = !historyOpen.value;
+  const opening = !historyOpen.value;
+  outlineOpen.value = false;
+  exportMenuOpen.value = false;
+  historyOpen.value = opening;
   if (historyOpen.value) {
     loadHistory();
     const rect = historyButtonRef.value?.getBoundingClientRect();
@@ -691,7 +703,10 @@ const exportButtonRef = ref<HTMLButtonElement | null>(null);
 const exportPosition = ref({ top: 0, right: 0 });
 
 function toggleExportMenu() {
-  exportMenuOpen.value = !exportMenuOpen.value;
+  const opening = !exportMenuOpen.value;
+  outlineOpen.value = false;
+  historyOpen.value = false;
+  exportMenuOpen.value = opening;
   if (exportMenuOpen.value) {
     const rect = exportButtonRef.value?.getBoundingClientRect();
     if (rect) exportPosition.value = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
@@ -1355,6 +1370,16 @@ const tableEditActions = computed<ToolbarAction[]>(() => {
   gap: 4px;
   flex: 0 0 auto;
   margin-left: auto;
+  /* Above .outline-backdrop (z-index 1000, below): each of Outline/History/
+     Export's own backdrop is a transparent position: fixed; inset: 0 click
+     catcher teleported to <body>, so with these buttons at the same
+     (implicit, unset) stacking level a click meant to switch straight from
+     one open panel to another instead landed on the first panel's backdrop
+     and only closed it - a second click on the same button was needed to
+     actually open the one the user wanted. Raising this above the backdrop
+     keeps the buttons themselves clickable through it. */
+  position: relative;
+  z-index: 1002;
 }
 
 .editor-meta {

@@ -6,6 +6,10 @@ const props = defineProps<{
   title: string;
   initialValue?: string;
   confirmLabel?: string;
+  // Returns an error message to show instead of confirming, or null/undefined
+  // if the value is OK to submit - e.g. rejecting a folder name that collides
+  // with one already in the (flat, unindented) sidebar list.
+  validate?: (value: string) => string | null | undefined;
 }>();
 
 const emit = defineEmits<{ confirm: [value: string]; cancel: [] }>();
@@ -13,9 +17,11 @@ const emit = defineEmits<{ confirm: [value: string]; cancel: [] }>();
 const { t } = useI18n();
 
 const value = ref(props.initialValue ?? "");
+const error = ref<string | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
 const formRef = ref<HTMLFormElement | null>(null);
 const titleId = `prompt-modal-title-${Math.random().toString(36).slice(2)}`;
+const errorId = `prompt-modal-error-${Math.random().toString(36).slice(2)}`;
 
 let previouslyFocused: HTMLElement | null = null;
 
@@ -52,7 +58,20 @@ onBeforeUnmount(() => {
 
 function submit() {
   const trimmed = value.value.trim();
-  if (trimmed) emit("confirm", trimmed);
+  if (!trimmed) return;
+  const message = props.validate?.(trimmed);
+  if (message) {
+    error.value = message;
+    return;
+  }
+  emit("confirm", trimmed);
+}
+
+// A validation error refers to whatever was typed when it was raised; once
+// the user changes the text it may no longer apply, so drop it rather than
+// leave a stale message sitting under an input that's since changed.
+function onInput() {
+  error.value = null;
 }
 </script>
 
@@ -69,7 +88,16 @@ function submit() {
         @keydown="onKeydownTab"
       >
         <h2 :id="titleId">{{ title }}</h2>
-        <input ref="inputRef" v-model="value" type="text" @keydown.esc="emit('cancel')" />
+        <input
+          ref="inputRef"
+          v-model="value"
+          type="text"
+          :aria-invalid="error ? 'true' : undefined"
+          :aria-describedby="error ? errorId : undefined"
+          @keydown.esc="emit('cancel')"
+          @input="onInput"
+        />
+        <p v-if="error" :id="errorId" class="modal-error" role="alert">{{ error }}</p>
         <div class="modal-actions">
           <button type="button" class="secondary" @click="emit('cancel')">{{ t('common.cancel') }}</button>
           <button type="submit" class="primary" :disabled="!value.trim()">
@@ -124,6 +152,12 @@ function submit() {
 .modal input:focus {
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 20%, transparent);
+}
+
+.modal-error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--danger);
 }
 
 .modal-actions {

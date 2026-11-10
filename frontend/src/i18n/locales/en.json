@@ -1,0 +1,282 @@
+{
+  "common": {
+    "delete": "Delete",
+    "restore": "Restore",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "cancel": "Cancel",
+    "close": "Close",
+    "ok": "OK",
+    "create": "Create",
+    "rename": "Rename",
+    "add": "Add",
+    "newNote": "New Note",
+    "newFolder": "New Folder",
+    "allNotes": "All Notes",
+    "today": "Today",
+    "recentlyDeleted": "Recently Deleted",
+    "templates": "Templates",
+    "notes": "Notes",
+    "tag": "Tag",
+    "appName": "Notes",
+    "linkOpenFailed": "Couldn't open the link: {error}"
+  },
+  "about": {
+    "navLabel": "About",
+    "version": "Version {version}",
+    "description": "A minimalist, local-first notes app for Linux, Windows, and macOS.",
+    "sourceLink": "View on GitHub",
+    "license": "MIT License"
+  },
+  "drawing": {
+    "title": "Drawing",
+    "edit": "Edit drawing",
+    "broken": "Drawing unavailable",
+    "confirmClear": "Clear the whole drawing? This can't be undone.",
+    "undo": "Undo",
+    "redo": "Redo",
+    "clear": "Clear",
+    "color": "Color: {color}",
+    "strokeWidth": "Stroke width: {width}",
+    "tool": {
+      "pen": "Pen",
+      "rectangle": "Rectangle",
+      "ellipse": "Ellipse",
+      "line": "Line",
+      "text": "Text",
+      "eraser": "Eraser"
+    }
+  },
+  "topBar": {
+    "toggleSidebar": "Toggle Sidebar",
+    "toggleNoteList": "Toggle Note List",
+    "toggleFocusMode": "Toggle Focus Mode",
+    "installUpdate": "Install v{version} and restart",
+    "installing": "Installing…",
+    "updateTo": "Update to v{version}"
+  },
+  "resize": {
+    "sidebar": "Resize sidebar",
+    "noteList": "Resize note list"
+  },
+  "sidebar": {
+    "navLabel": "Folders and tags",
+    "searchPlaceholder": "Search",
+    "searchLabel": "Search notes",
+    "smartSearchTitle": "Smart Search: semantic search over note meaning, via a local Ollama model",
+    "smartSearchToggle": "Toggle Smart Search",
+    "folders": "Folders",
+    "tags": "Tags",
+    "appearanceTitle": "Appearance: {label} (click to change)",
+    "appearanceLabel": "Appearance: {label}. Click to change.",
+    "appearanceMenuLabel": "Choose appearance",
+    "theme": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "paper": "Paper",
+      "slate": "Slate",
+      "highContrast": "High Contrast",
+      "harbor": "Harbor",
+      "glass": "Glass"
+    }
+  },
+  "noteList": {
+    "sectionLabel": "Notes list",
+    "trashNotice": "Notes are deleted permanently from here after 30 days.",
+    "empty": "No Notes",
+    "emptyTemplates": "No templates yet — right-click a note and choose \"Save as Template\".",
+    "pinned": "Pinned",
+    "blankNote": "Blank Note",
+    "newFromTemplate": "New from Template…",
+    "smartSearchPrefix": "Smart Search: ",
+    "sort": {
+      "label": "Sort By",
+      "dateModified": "Date Modified",
+      "dateCreated": "Date Created",
+      "title": "Title",
+      "ascending": "Ascending",
+      "descending": "Descending"
+    }
+  },
+  "editor": {
+    "placeholder": "New Note",
+    "contentLabel": "Note content",
+    "emptyState": "No Note Selected",
+    "wordCount": {
+      "oneWord": "1 word",
+      "words": "{count} words",
+      "readingTime": "{minutes} min read"
+    },
+    "templateHint": "Tip: {'{'}{'{'}date{'}'}{'}'} and {'{'}{'{'}time{'}'}{'}'} are filled in automatically when a note is created from this template.",
+    "removeTag": "Remove tag",
+    "removeTagLabel": "Remove tag {name}",
+    "addTag": "Add Tag",
+    "addTagButton": "+ Tag",
+    "toolbar": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "strikethrough": "Strikethrough",
+      "highlight": "Highlight",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "divider": "Divider",
+      "checklist": "Checklist",
+      "bulletList": "Bullet List",
+      "numberedList": "Numbered List",
+      "codeBlock": "Code Block",
+      "quote": "Quote",
+      "insertTable": "Insert Table",
+      "addRow": "Add Row",
+      "deleteRow": "Delete Row",
+      "addColumn": "Add Column",
+      "deleteColumn": "Delete Column",
+      "deleteTable": "Delete Table",
+      "insertMath": "Insert Math",
+      "insertMermaid": "Insert Diagram",
+      "insertDrawing": "Insert Drawing",
+      "link": "Link",
+      "linkUrlPlaceholder": "Paste or type a URL",
+      "linkApply": "Apply",
+      "linkRemove": "Remove"
+    },
+    "find": {
+      "openFind": "Find in Note",
+      "findPlaceholder": "Find",
+      "replacePlaceholder": "Replace",
+      "previous": "Previous Match",
+      "next": "Next Match",
+      "caseSensitive": "Match Case",
+      "replace": "Replace",
+      "replaceAll": "Replace All",
+      "matchCount": "{current}/{total}",
+      "noResults": "No results"
+    },
+    "noteLink": {
+      "noMatches": "No matching notes"
+    },
+    "slashCommand": {
+      "noMatches": "No matching commands"
+    },
+    "backlinks": {
+      "title": "Linked Mentions"
+    },
+    "relatedNotes": {
+      "title": "Related Notes"
+    },
+    "outline": {
+      "title": "Outline",
+      "empty": "No headings yet"
+    },
+    "history": {
+      "title": "Version History",
+      "empty": "No earlier versions yet",
+      "restore": "Restore this version",
+      "confirmRestore": "Restore this note to its {time} version? Your current content will be saved as a version too, so nothing is lost.",
+      "restored": "Restored an earlier version"
+    },
+    "conflict": {
+      "toast": "A newer version of this note was found (synced in from elsewhere). Your edit was saved separately as “{title}”."
+    },
+    "export": {
+      "button": "Export",
+      "html": "Export as HTML…",
+      "pdf": "Export as PDF…",
+      "defaultFilename": "Untitled"
+    }
+  },
+  "import": {
+    "button": "Import Markdown Folder…",
+    "importing": "Importing…",
+    "done": "Imported {count} note(s).",
+    "noneFound": "No Markdown files were found in that folder.",
+    "failed": "Import failed: {error}"
+  },
+  "backup": {
+    "button": "Backup All Notes…",
+    "defaultFilename": "Notes Backup {date}",
+    "done": "Backup saved.",
+    "failed": "Backup failed: {error}",
+    "restoreButton": "Restore from Backup…",
+    "restoreSwitchConfirm": "Switch to the restored notes at “{path}” now? Your current notes folder is left on disk untouched, but the app will start showing this one instead.",
+    "restoreDone": "Restored {count} file(s).",
+    "restoreFailed": "Restore failed: {error}"
+  },
+  "vault": {
+    "unlockHeading": "Vault is Locked",
+    "unlockSubtitlePassword": "Enter your password to unlock your notes.",
+    "unlockSubtitleRecovery": "Enter your recovery key to unlock your notes.",
+    "passwordPlaceholder": "Password",
+    "confirmPasswordPlaceholder": "Confirm password",
+    "recoveryKeyPlaceholder": "Recovery key",
+    "unlockButton": "Unlock",
+    "useRecoveryKeyInstead": "Use recovery key instead",
+    "usePasswordInstead": "Use password instead",
+    "enableButton": "Encrypt Notes…",
+    "lockButton": "Lock Vault",
+    "enableTitle": "Encrypt Your Notes",
+    "enableSubtitle": "Choose a password. Every note will be encrypted on disk, readable only after unlocking with this password. There's no way to recover your notes if this password is lost, other than the recovery key on the next step.",
+    "errorPasswordRequired": "Enter a password.",
+    "errorPasswordsDontMatch": "Passwords don't match.",
+    "recoveryTitle": "Save Your Recovery Key",
+    "recoverySubtitle": "This is the only time this key will ever be shown. Save it somewhere safe - it's the only way back into your notes if you forget your password.",
+    "copyRecoveryKey": "Copy to Clipboard",
+    "copied": "Copied",
+    "confirmSaved": "I've saved this recovery key somewhere safe"
+  },
+  "contextMenu": {
+    "deletePermanently": "Delete Permanently",
+    "confirmDeletePermanent": "Permanently delete \"{title}\"? This can't be undone.",
+    "saveAsTemplate": "Save as Template",
+    "removeFromTemplates": "Remove from Templates",
+    "moveTo": "Move to “{folder}”",
+    "newSubfolder": "New Subfolder…",
+    "renameEllipsis": "Rename…",
+    "cantDeleteFolder": "Can't delete \"{name}\": {error}",
+    "colorNone": "Default Color",
+    "colorRed": "Red",
+    "colorOrange": "Orange",
+    "colorYellow": "Yellow",
+    "colorGreen": "Green",
+    "colorBlue": "Blue",
+    "colorIndigo": "Indigo",
+    "colorPurple": "Purple",
+    "colorGray": "Gray"
+  },
+  "promptModal": {
+    "addTagTitle": "Add Tag",
+    "newFolderTitle": "New Folder",
+    "renameFolderTitle": "Rename Folder",
+    "duplicateFolderName": "A folder named \"{name}\" already exists"
+  },
+  "commandPalette": {
+    "title": "Command Palette",
+    "placeholder": "Search notes, folders, tags, or run a command…",
+    "noResults": "No matches",
+    "section": {
+      "action": "Commands",
+      "note": "Notes",
+      "folder": "Folders",
+      "tag": "Tags"
+    },
+    "action": {
+      "newNote": "New Note",
+      "today": "Open Today's Note",
+      "toggleTheme": "Toggle Theme",
+      "toggleFocusMode": "Toggle Focus Mode",
+      "toggleSidebar": "Toggle Sidebar",
+      "toggleNoteList": "Toggle Note List",
+      "allNotes": "Go to All Notes",
+      "recentlyDeleted": "Go to Recently Deleted",
+      "templates": "Go to Templates"
+    }
+  },
+  "firstRun": {
+    "heading": "Where should your notes live?",
+    "subtitle": "Notes are saved as plain Markdown files in a folder you choose. Pick a folder inside Dropbox, pCloud, or any synced drive to have your notes follow you across Mac and Linux — or keep it local.",
+    "chooseFolder": "Choose a Folder…",
+    "useDefault": "Use Documents/Notes (local only)"
+  }
+}

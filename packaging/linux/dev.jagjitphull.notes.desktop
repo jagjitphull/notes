@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Notes
+Comment=A minimalist, local-first notes app
+Exec=notes
+Icon=dev.jagjitphull.notes
+Terminal=false
+Categories=Office;
+StartupWMClass=notes

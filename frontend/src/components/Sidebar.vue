@@ -199,22 +199,21 @@ defineExpose({ focusSearch });
       <div class="section-header">
         <h2 class="pane-title">{{ t('sidebar.tags') }}</h2>
       </div>
-      <ul class="nav-list">
+      <ul class="tag-list">
         <li v-for="tag in tags" :key="tag.id">
           <button
-            class="nav-item"
+            class="tag-pill"
             :class="{ active: selectedId === `tag:${tag.id}` }"
             :aria-current="selectedId === `tag:${tag.id}` ? 'true' : undefined"
             @click="selectedId = `tag:${tag.id}`"
             @contextmenu.prevent="emit('tagContextmenu', $event, tag)"
           >
             <span
-              class="nav-icon tag-icon"
+              class="tag-pill-hash"
               aria-hidden="true"
               :style="tag.color ? { color: tag.color } : undefined"
               >#</span
-            >
-            <span class="nav-label">{{ tag.name }}</span>
+            >{{ tag.name }}
           </button>
         </li>
       </ul>
@@ -438,11 +437,51 @@ defineExpose({ focusSearch });
   color: var(--accent-blue);
 }
 
-.tag-icon {
-  width: 17px;
-  text-align: center;
+/* Tags render as wrapping pills rather than one-per-row .nav-items: a vault
+   can easily hold a few dozen short tag names, and stacking those full-width
+   burns far more vertical space than letting several sit side by side. */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  border: none;
+  background: var(--bg-hover);
+  border-radius: 999px;
+  padding: 3px 10px 3px 8px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-pill:hover {
+  background: var(--bg-selected);
+}
+
+.tag-pill.active {
+  background: var(--bg-selected-strong);
+  color: #fff;
+}
+
+.tag-pill-hash {
   color: var(--text-secondary);
   font-weight: 600;
+}
+
+.tag-pill.active .tag-pill-hash {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .nav-label {
